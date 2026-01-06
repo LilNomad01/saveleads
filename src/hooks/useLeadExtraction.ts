@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useAuth } from './useAuth';
 
 export function useLeadExtraction() {
+  const { user } = useAuth();
   const [isExtracting, setIsExtracting] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
@@ -18,7 +20,8 @@ export function useLeadExtraction() {
           location,
           sessionId: newSessionId,
           apiProvider,
-          maxResults
+          maxResults,
+          userId: user?.id
         }
       });
 
@@ -38,7 +41,7 @@ export function useLeadExtraction() {
     } finally {
       setIsExtracting(false);
     }
-  }, []);
+  }, [user]);
 
   return { isExtracting, sessionId, startExtraction };
 }
