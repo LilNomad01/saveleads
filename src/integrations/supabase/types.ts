@@ -14,7 +14,129 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      campanhas: {
+        Row: {
+          created_at: string
+          delay_max: number | null
+          delay_min: number | null
+          id: string
+          mensagens: Json
+          nome: string
+          status: string | null
+          total_entregues: number | null
+          total_enviados: number | null
+          total_falhas: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          delay_max?: number | null
+          delay_min?: number | null
+          id?: string
+          mensagens?: Json
+          nome: string
+          status?: string | null
+          total_entregues?: number | null
+          total_enviados?: number | null
+          total_falhas?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          delay_max?: number | null
+          delay_min?: number | null
+          id?: string
+          mensagens?: Json
+          nome?: string
+          status?: string | null
+          total_entregues?: number | null
+          total_enviados?: number | null
+          total_falhas?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      extraction_logs: {
+        Row: {
+          created_at: string
+          dados: Json | null
+          id: string
+          mensagem: string
+          session_id: string
+          tipo: string
+        }
+        Insert: {
+          created_at?: string
+          dados?: Json | null
+          id?: string
+          mensagem: string
+          session_id: string
+          tipo: string
+        }
+        Update: {
+          created_at?: string
+          dados?: Json | null
+          id?: string
+          mensagem?: string
+          session_id?: string
+          tipo?: string
+        }
+        Relationships: []
+      }
+      leads: {
+        Row: {
+          avaliacao: number | null
+          categoria: string | null
+          created_at: string
+          data_disparo: string | null
+          data_extracao: string
+          endereco: string | null
+          fonte: string | null
+          id: string
+          nome_empresa: string
+          site: string | null
+          status: string | null
+          telefone_original: string | null
+          total_avaliacoes: number | null
+          updated_at: string
+          whatsapp_numero: string | null
+        }
+        Insert: {
+          avaliacao?: number | null
+          categoria?: string | null
+          created_at?: string
+          data_disparo?: string | null
+          data_extracao?: string
+          endereco?: string | null
+          fonte?: string | null
+          id?: string
+          nome_empresa: string
+          site?: string | null
+          status?: string | null
+          telefone_original?: string | null
+          total_avaliacoes?: number | null
+          updated_at?: string
+          whatsapp_numero?: string | null
+        }
+        Update: {
+          avaliacao?: number | null
+          categoria?: string | null
+          created_at?: string
+          data_disparo?: string | null
+          data_extracao?: string
+          endereco?: string | null
+          fonte?: string | null
+          id?: string
+          nome_empresa?: string
+          site?: string | null
+          status?: string | null
+          telefone_original?: string | null
+          total_avaliacoes?: number | null
+          updated_at?: string
+          whatsapp_numero?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
