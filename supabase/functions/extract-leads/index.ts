@@ -11,7 +11,8 @@ interface ExtractRequest {
   keyword: string;
   location: string;
   sessionId: string;
-  apiProvider?: 'serpapi' | 'outscraper' | 'mock';
+  apiProvider?: 'serpapi' | 'outscraper' | 'apify' | 'mock';
+  maxResults?: number;
 }
 
 // Função para sanitizar números brasileiros
@@ -78,7 +79,7 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { keyword, location, sessionId, apiProvider = 'mock' }: ExtractRequest = await req.json();
+    const { keyword, location, sessionId, apiProvider = 'mock', maxResults = 50 }: ExtractRequest = await req.json();
 
     console.log(`[extract-leads] Starting extraction: ${keyword} in ${location}`);
 
@@ -249,6 +250,121 @@ serve(async (req) => {
             dados: { phone: place.phone, rating: place.rating }
           });
         }
+      }
+
+    } else if (apiProvider === 'apify') {
+      const apifyKey = Deno.env.get('APIFY_API_KEY');
+      if (!apifyKey) {
+        throw new Error('APIFY_API_KEY não configurada. Adicione sua chave nas configurações.');
+      }
+
+      await supabase.from('extraction_logs').insert({
+        session_id: sessionId,
+        tipo: 'info',
+        mensagem: '🔗 Conectando à Apify (Google Maps Scraper)...'
+      });
+
+      // Start the Apify actor run
+      const searchQuery = `${keyword} ${location}`;
+      const maxQueries = maxResults || 50;
+
+      const runResponse = await fetch(
+        `https://api.apify.com/v2/acts/apify~google-maps-scraper/runs?token=${apifyKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            searchStringsArray: [searchQuery],
+            maxCrawledPlacesPerSearch: maxQueries,
+            language: 'pt-BR',
+            skipClosedPlaces: false
+          })
+        }
+      );
+
+      if (!runResponse.ok) {
+        const errorText = await runResponse.text();
+        console.error('[extract-leads] Apify run failed:', errorText);
+        throw new Error(`Falha ao iniciar extração Apify: ${runResponse.status}`);
+      }
+
+      const runData = await runResponse.json();
+      const runId = runData.data?.id;
+
+      if (!runId) {
+        throw new Error('Não foi possível obter o ID da execução Apify');
+      }
+
+      await supabase.from('extraction_logs').insert({
+        session_id: sessionId,
+        tipo: 'info',
+        mensagem: `⏳ Extração iniciada (ID: ${runId}). Aguardando resultados...`,
+        dados: { runId }
+      });
+
+      // Poll for completion
+      let attempts = 0;
+      const maxAttempts = 60; // 5 minutes max
+      let runStatus = 'RUNNING';
+
+      while (runStatus === 'RUNNING' && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+        
+        const statusResponse = await fetch(
+          `https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`
+        );
+        const statusData = await statusResponse.json();
+        runStatus = statusData.data?.status;
+        attempts++;
+
+        if (attempts % 6 === 0) { // Log every 30 seconds
+          await supabase.from('extraction_logs').insert({
+            session_id: sessionId,
+            tipo: 'info',
+            mensagem: `⏳ Processando... (${Math.floor(attempts * 5 / 60)}min ${(attempts * 5) % 60}s)`
+          });
+        }
+      }
+
+      if (runStatus !== 'SUCCEEDED') {
+        throw new Error(`Extração Apify terminou com status: ${runStatus}`);
+      }
+
+      // Get the results
+      const datasetResponse = await fetch(
+        `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`
+      );
+      const results = await datasetResponse.json();
+
+      await supabase.from('extraction_logs').insert({
+        session_id: sessionId,
+        tipo: 'success',
+        mensagem: `📊 Recebidos ${results.length} resultados da Apify`
+      });
+
+      for (const place of results) {
+        const phoneRaw = place.phone || place.phoneUnformatted || '';
+        const whatsappNumero = sanitizePhoneNumber(phoneRaw, ddd);
+        
+        leads.push({
+          nome_empresa: place.title || place.name || '',
+          telefone_original: phoneRaw,
+          whatsapp_numero: whatsappNumero,
+          site: place.website || place.url || '',
+          endereco: place.address || place.street || '',
+          categoria: place.categoryName || keyword,
+          avaliacao: place.totalScore || place.rating || null,
+          total_avaliacoes: place.reviewsCount || place.reviews || 0,
+          status: whatsappNumero ? 'validado' : 'extraido',
+          fonte: 'apify'
+        });
+
+        await supabase.from('extraction_logs').insert({
+          session_id: sessionId,
+          tipo: 'success',
+          mensagem: `✅ ${place.title || place.name}`,
+          dados: { phone: phoneRaw, rating: place.totalScore || place.rating }
+        });
       }
     }
 

@@ -6,7 +6,7 @@ export function useLeadExtraction() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const startExtraction = useCallback(async (keyword: string, location: string) => {
+  const startExtraction = useCallback(async (keyword: string, location: string, apiProvider: 'apify' | 'mock' = 'apify', maxResults: number = 50) => {
     const newSessionId = crypto.randomUUID();
     setSessionId(newSessionId);
     setIsExtracting(true);
@@ -17,7 +17,8 @@ export function useLeadExtraction() {
           keyword,
           location,
           sessionId: newSessionId,
-          apiProvider: 'mock' // Change to 'serpapi' or 'outscraper' when configured
+          apiProvider,
+          maxResults
         }
       });
 

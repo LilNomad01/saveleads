@@ -1,1 +1,4 @@
 project_id = "oxisqyvkyldyearntcdo"
+
+[functions.extract-leads]
+verify_jwt = false
