@@ -1,20 +1,28 @@
+import { useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { LeadSearchForm } from "@/components/leads/LeadSearchForm";
 import { LeadsTableReal } from "@/components/leads/LeadsTableReal";
 import { ExtractionConsole } from "@/components/leads/ExtractionConsole";
 import { StatCard } from "@/components/ui/stat-card";
-import { Map, Building2, CheckCircle2, Phone } from "lucide-react";
+import { Map, Building2, CheckCircle2, Phone, MessageSquare, Send } from "lucide-react";
 import { useLeads } from "@/hooks/useLeads";
 import { useLeadExtraction } from "@/hooks/useLeadExtraction";
 import { useExtractionLogs } from "@/hooks/useExtractionLogs";
+import { Badge } from "@/components/ui/badge";
 
 export default function LeadExtractor() {
   const { leads, isLoading: isLoadingLeads } = useLeads();
   const { isExtracting, sessionId, startExtraction } = useLeadExtraction();
   const { logs } = useExtractionLogs(sessionId);
+  const [sessionLeadsCount, setSessionLeadsCount] = useState(0);
 
-  const handleSearch = async (keyword: string, location: string) => {
-    await startExtraction(keyword, location);
+  const handleSearch = async (keyword: string, location: string, apiProvider: 'apify' | 'mock', maxResults: number) => {
+    const previousCount = leads.length;
+    await startExtraction(keyword, location, apiProvider, maxResults);
+    // The count will update via real-time subscription
+    setTimeout(() => {
+      setSessionLeadsCount(leads.length - previousCount);
+    }, 2000);
   };
 
   const totalLeads = leads.length;
@@ -26,15 +34,23 @@ export default function LeadExtractor() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Extrator de Leads</h1>
-          <p className="text-muted-foreground">
-            Extraia leads qualificados do Google Maps em tempo real
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Extrator de Leads B2B</h1>
+            <p className="text-muted-foreground">
+              Extraia leads reais do Google Maps usando a API Apify
+            </p>
+          </div>
+          {isExtracting && (
+            <Badge variant="outline" className="animate-pulse bg-primary/10 text-primary border-primary">
+              <span className="mr-2 h-2 w-2 rounded-full bg-primary animate-ping" />
+              Extração em andamento...
+            </Badge>
+          )}
         </div>
 
         {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatCard
             title="Total de Leads"
             value={totalLeads}
@@ -60,7 +76,14 @@ export default function LeadExtractor() {
             title="Já Enviados"
             value={sentLeads}
             description="mensagens disparadas"
+            icon={Send}
+          />
+          <StatCard
+            title="Nesta Sessão"
+            value={sessionLeadsCount}
+            description="leads extraídos agora"
             icon={Building2}
+            variant="success"
           />
         </div>
 
