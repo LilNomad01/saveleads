@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,12 @@ const navItems = [
     description: "Dashboard",
     icon: BarChart3,
     path: "/analytics",
+  },
+  {
+    title: "Configurações",
+    description: "Conta e API",
+    icon: Settings,
+    path: "/settings",
   },
 ];
 

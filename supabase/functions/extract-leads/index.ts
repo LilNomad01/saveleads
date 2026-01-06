@@ -13,6 +13,7 @@ interface ExtractRequest {
   sessionId: string;
   apiProvider?: 'serpapi' | 'outscraper' | 'apify' | 'mock';
   maxResults?: number;
+  userId?: string;
 }
 
 // Função para sanitizar números brasileiros
@@ -79,9 +80,21 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { keyword, location, sessionId, apiProvider = 'mock', maxResults = 50 }: ExtractRequest = await req.json();
+    const { keyword, location, sessionId, apiProvider = 'mock', maxResults = 50, userId }: ExtractRequest = await req.json();
 
-    console.log(`[extract-leads] Starting extraction: ${keyword} in ${location}`);
+    console.log(`[extract-leads] Starting extraction: ${keyword} in ${location} for user: ${userId}`);
+
+    // Se userId fornecido, buscar token do perfil do usuário
+    let userApifyToken: string | null = null;
+    if (userId && apiProvider === 'apify') {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('apify_api_token')
+        .eq('user_id', userId)
+        .single();
+      
+      userApifyToken = profile?.apify_api_token || null;
+    }
 
     // Log inicial
     await supabase.from('extraction_logs').insert({
@@ -151,7 +164,8 @@ serve(async (req) => {
           avaliacao: business.rating,
           total_avaliacoes: business.reviews,
           status: whatsappNumero ? 'validado' : 'extraido',
-          fonte: 'google_maps'
+          fonte: 'google_maps',
+          user_id: userId || null
         });
 
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -190,7 +204,8 @@ serve(async (req) => {
             avaliacao: place.rating || null,
             total_avaliacoes: place.reviews || 0,
             status: whatsappNumero ? 'validado' : 'extraido',
-            fonte: 'serpapi'
+            fonte: 'serpapi',
+            user_id: userId || null
           });
 
           await supabase.from('extraction_logs').insert({
@@ -240,7 +255,8 @@ serve(async (req) => {
             avaliacao: place.rating || null,
             total_avaliacoes: place.reviews || 0,
             status: whatsappNumero ? 'validado' : 'extraido',
-            fonte: 'outscraper'
+            fonte: 'outscraper',
+            user_id: userId || null
           });
 
           await supabase.from('extraction_logs').insert({
@@ -253,9 +269,10 @@ serve(async (req) => {
       }
 
     } else if (apiProvider === 'apify') {
-      const apifyKey = Deno.env.get('APIFY_API_KEY');
+      // Usa token do perfil do usuário, ou fallback para variável de ambiente
+      const apifyKey = userApifyToken || Deno.env.get('APIFY_API_KEY');
       if (!apifyKey) {
-        throw new Error('APIFY_API_KEY não configurada. Adicione sua chave nas configurações.');
+        throw new Error('Token Apify não configurado. Adicione seu token em Configurações > API Token.');
       }
 
       await supabase.from('extraction_logs').insert({
@@ -356,7 +373,8 @@ serve(async (req) => {
           avaliacao: place.totalScore || place.rating || null,
           total_avaliacoes: place.reviewsCount || place.reviews || 0,
           status: whatsappNumero ? 'validado' : 'extraido',
-          fonte: 'apify'
+          fonte: 'apify',
+          user_id: userId || null
         });
 
         await supabase.from('extraction_logs').insert({

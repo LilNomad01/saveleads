@@ -99,6 +99,7 @@ export type Database = {
           telefone_original: string | null
           total_avaliacoes: number | null
           updated_at: string
+          user_id: string | null
           whatsapp_numero: string | null
         }
         Insert: {
@@ -116,6 +117,7 @@ export type Database = {
           telefone_original?: string | null
           total_avaliacoes?: number | null
           updated_at?: string
+          user_id?: string | null
           whatsapp_numero?: string | null
         }
         Update: {
@@ -133,7 +135,35 @@ export type Database = {
           telefone_original?: string | null
           total_avaliacoes?: number | null
           updated_at?: string
+          user_id?: string | null
           whatsapp_numero?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          apify_api_token: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          apify_api_token?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          apify_api_token?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

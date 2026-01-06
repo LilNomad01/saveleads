@@ -7,6 +7,8 @@ import Index from "./pages/Index";
 import WhatsAppManager from "./pages/WhatsAppManager";
 import LeadExtractor from "./pages/LeadExtractor";
 import Analytics from "./pages/Analytics";
+import Settings from "./pages/Settings";
+import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +24,8 @@ const App = () => (
           <Route path="/leads" element={<LeadExtractor />} />
           <Route path="/whatsapp" element={<WhatsAppManager />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/auth" element={<Auth />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
