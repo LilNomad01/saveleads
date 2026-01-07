@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Send, Phone, Globe, Star, MapPin, Loader2 } from 'lucide-react';
+import { Download, Send, Phone, Globe, Star, MapPin, Loader2, Trash2, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -11,12 +11,26 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Lead } from '@/hooks/useLeads';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface LeadsTableRealProps {
   leads: Lead[];
   isLoading: boolean;
+  onDelete?: (leadIds: string[]) => Promise<boolean>;
+  onExtractPhones?: (leadIds: string[]) => string[];
 }
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -27,8 +41,10 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
   falhou: { label: 'Falhou', variant: 'destructive' },
 };
 
-export function LeadsTableReal({ leads, isLoading }: LeadsTableRealProps) {
+export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: LeadsTableRealProps) {
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const toggleLead = (id: string) => {
     const newSelected = new Set(selectedLeads);
@@ -69,6 +85,34 @@ export function LeadsTableReal({ leads, isLoading }: LeadsTableRealProps) {
     link.href = URL.createObjectURL(blob);
     link.download = `leads_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
+    toast.success(`${leadsToExport.length} leads exportados!`);
+  };
+
+  const handleExtractPhones = () => {
+    if (!onExtractPhones) return;
+    
+    const phones = onExtractPhones(Array.from(selectedLeads));
+    if (phones.length === 0) {
+      toast.error('Nenhum telefone válido encontrado nos leads selecionados');
+      return;
+    }
+
+    const phoneList = phones.join('\n');
+    navigator.clipboard.writeText(phoneList);
+    setCopied(true);
+    toast.success(`${phones.length} números copiados para a área de transferência!`);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    
+    setIsDeleting(true);
+    const success = await onDelete(Array.from(selectedLeads));
+    if (success) {
+      setSelectedLeads(new Set());
+    }
+    setIsDeleting(false);
   };
 
   if (isLoading) {
@@ -81,14 +125,23 @@ export function LeadsTableReal({ leads, isLoading }: LeadsTableRealProps) {
 
   return (
     <div className="bg-card rounded-xl shadow-card border border-border overflow-hidden">
-      <div className="p-4 border-b border-border flex items-center justify-between">
+      <div className="p-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="font-semibold text-foreground">Leads Extraídos</h3>
           <p className="text-sm text-muted-foreground">
             {leads.length} leads • {selectedLeads.size} selecionados
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleExtractPhones}
+            disabled={selectedLeads.size === 0}
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            {copied ? 'Copiado!' : 'Copiar Telefones'}
+          </Button>
           <Button 
             variant="outline" 
             size="sm" 
@@ -98,6 +151,32 @@ export function LeadsTableReal({ leads, isLoading }: LeadsTableRealProps) {
             <Download className="h-4 w-4" />
             Exportar CSV
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button 
+                variant="destructive" 
+                size="sm"
+                disabled={selectedLeads.size === 0 || isDeleting}
+              >
+                <Trash2 className="h-4 w-4" />
+                Excluir ({selectedLeads.size})
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Excluir leads selecionados?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta ação não pode ser desfeita. {selectedLeads.size} lead(s) serão excluídos permanentemente.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Excluir'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button 
             size="sm" 
             className="bg-whatsapp hover:bg-whatsapp/90"

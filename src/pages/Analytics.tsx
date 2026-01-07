@@ -2,82 +2,56 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatCard } from "@/components/ui/stat-card";
 import { PerformanceChart } from "@/components/analytics/PerformanceChart";
 import { ActivityFeed } from "@/components/analytics/ActivityFeed";
-import { Map, Users, Send, TrendingUp } from "lucide-react";
-
-const chartData = [
-  { date: "Seg", leads: 45, messages: 32, delivered: 30 },
-  { date: "Ter", leads: 52, messages: 48, delivered: 45 },
-  { date: "Qua", leads: 38, messages: 35, delivered: 33 },
-  { date: "Qui", leads: 65, messages: 58, delivered: 55 },
-  { date: "Sex", leads: 72, messages: 65, delivered: 62 },
-  { date: "Sáb", leads: 28, messages: 22, delivered: 20 },
-  { date: "Dom", leads: 15, messages: 12, delivered: 11 },
-];
-
-const recentActivities = [
-  {
-    id: "1",
-    phone: "+55 11 98765-4321",
-    company: "Pizzaria Bella Napoli",
-    status: "delivered" as const,
-    timestamp: "há 2 min",
-  },
-  {
-    id: "2",
-    phone: "+55 11 99876-5432",
-    company: "Restaurante Don Carlo",
-    status: "sent" as const,
-    timestamp: "há 5 min",
-  },
-  {
-    id: "3",
-    phone: "+55 11 97654-3210",
-    company: "Lanchonete Express",
-    status: "delivered" as const,
-    timestamp: "há 8 min",
-  },
-  {
-    id: "4",
-    phone: "+55 11 96543-2109",
-    company: "Café Central",
-    status: "failed" as const,
-    timestamp: "há 12 min",
-  },
-  {
-    id: "5",
-    phone: "+55 11 95432-1098",
-    company: "Padaria São Paulo",
-    status: "delivered" as const,
-    timestamp: "há 15 min",
-  },
-  {
-    id: "6",
-    phone: "+55 11 94321-0987",
-    company: "Doceria Artesanal",
-    status: "pending" as const,
-    timestamp: "há 20 min",
-  },
-  {
-    id: "7",
-    phone: "+55 11 93210-9876",
-    company: "Hamburgueria Prime",
-    status: "delivered" as const,
-    timestamp: "há 25 min",
-  },
-  {
-    id: "8",
-    phone: "+55 11 92109-8765",
-    company: "Sushi House",
-    status: "delivered" as const,
-    timestamp: "há 30 min",
-  },
-];
+import { Map, Users, Send, TrendingUp, Loader2 } from "lucide-react";
+import { useLeads } from "@/hooks/useLeads";
+import { useCampaigns } from "@/hooks/useCampaigns";
+import { useMemo } from "react";
 
 export default function Analytics() {
-  const totalLeads = 315;
-  const qualifiedLeads = 287;
-  const messagesSent = 272;
-  const deliveryRate = 94.5;
+  const { leads, isLoading: leadsLoading, getStats } = useLeads();
+  const { campaigns, isLoading: campaignsLoading } = useCampaigns();
+
+  const stats = useMemo(() => getStats(), [getStats]);
+  
+  const campaignStats = useMemo(() => {
+    const totalSent = campaigns.reduce((acc, c) => acc + (c.total_enviados || 0), 0);
+    const totalDelivered = campaigns.reduce((acc, c) => acc + (c.total_entregues || 0), 0);
+    const deliveryRate = totalSent > 0 ? (totalDelivered / totalSent) * 100 : 0;
+    return { totalSent, totalDelivered, deliveryRate };
+  }, [campaigns]);
+
+  const chartData = useMemo(() => {
+    return stats.leadsByDay.map(day => ({
+      date: day.date,
+      leads: day.leads,
+      messages: Math.floor(day.leads * 0.8), // Placeholder until we track messages by day
+      delivered: Math.floor(day.leads * 0.75)
+    }));
+  }, [stats.leadsByDay]);
+
+  const recentActivities = useMemo(() => {
+    return leads.slice(0, 8).map(lead => ({
+      id: lead.id,
+      phone: lead.whatsapp_numero ? `+${lead.whatsapp_numero}` : lead.telefone_original || '',
+      company: lead.nome_empresa,
+      status: (lead.status === 'entregue' ? 'delivered' : 
+               lead.status === 'enviado' ? 'sent' :
+               lead.status === 'falhou' ? 'failed' : 'pending') as 'delivered' | 'sent' | 'pending' | 'failed',
+      timestamp: formatTimeAgo(new Date(lead.created_at))
+    }));
+  }, [leads]);
+
+  const isLoading = leadsLoading || campaignsLoading;
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -94,33 +68,31 @@ export default function Analytics() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title="Total de Leads Extraídos"
-            value={totalLeads}
+            value={stats.totalLeads}
             description="últimos 7 dias"
             icon={Map}
-            trend={{ value: 23, isPositive: true }}
+            trend={stats.leadsThisWeek > 0 ? { value: stats.leadsThisWeek, isPositive: true } : undefined}
             variant="navy"
           />
           <StatCard
             title="Leads Qualificados"
-            value={qualifiedLeads}
+            value={stats.leadsWithPhone}
             description="com telefone válido"
             icon={Users}
-            trend={{ value: 18, isPositive: true }}
+            trend={stats.leadsWithPhone > 0 ? { value: Math.round((stats.leadsWithPhone / Math.max(stats.totalLeads, 1)) * 100), isPositive: true } : undefined}
           />
           <StatCard
             title="Mensagens Enviadas"
-            value={messagesSent}
+            value={campaignStats.totalSent}
             description="via WhatsApp"
             icon={Send}
-            trend={{ value: 15, isPositive: true }}
             variant="accent"
           />
           <StatCard
             title="Taxa de Entrega"
-            value={`${deliveryRate}%`}
+            value={`${campaignStats.deliveryRate.toFixed(1)}%`}
             description="mensagens entregues"
             icon={TrendingUp}
-            trend={{ value: 2.3, isPositive: true }}
           />
         </div>
 
@@ -132,4 +104,17 @@ export default function Analytics() {
       </div>
     </DashboardLayout>
   );
+}
+
+function formatTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 1) return 'agora';
+  if (diffMins < 60) return `há ${diffMins} min`;
+  if (diffHours < 24) return `há ${diffHours}h`;
+  return `há ${diffDays}d`;
 }
