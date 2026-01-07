@@ -11,7 +11,7 @@ import { useExtractionLogs } from "@/hooks/useExtractionLogs";
 import { Badge } from "@/components/ui/badge";
 
 export default function LeadExtractor() {
-  const { leads, isLoading: isLoadingLeads } = useLeads();
+  const { leads, isLoading: isLoadingLeads, deleteLeads, extractPhoneNumbers } = useLeads();
   const { isExtracting, sessionId, startExtraction } = useLeadExtraction();
   const { logs } = useExtractionLogs(sessionId);
   const [sessionLeadsCount, setSessionLeadsCount] = useState(0);
@@ -94,7 +94,12 @@ export default function LeadExtractor() {
         <ExtractionConsole logs={logs} isExtracting={isExtracting} />
 
         {/* Results Table */}
-        <LeadsTableReal leads={leads} isLoading={isLoadingLeads} />
+        <LeadsTableReal 
+          leads={leads} 
+          isLoading={isLoadingLeads} 
+          onDelete={deleteLeads}
+          onExtractPhones={extractPhoneNumbers}
+        />
       </div>
     </DashboardLayout>
   );
