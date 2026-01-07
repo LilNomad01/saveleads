@@ -282,7 +282,6 @@ serve(async (req) => {
       });
 
       // Start the Apify actor run
-      const searchQuery = `${keyword} ${location}`;
       const maxQueries = maxResults || 50;
 
       const runResponse = await fetch(
@@ -291,10 +290,11 @@ serve(async (req) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            searchStringsArray: [searchQuery],
+            searchStringsArray: [keyword],
+            locationQuery: `${location}, Brasil`,
             maxCrawledPlacesPerSearch: maxQueries,
             language: 'pt-BR',
-            skipClosedPlaces: false
+            countryCode: 'BR'
           })
         }
       );
