@@ -294,7 +294,7 @@ serve(async (req) => {
             locationQuery: `${location}, Brasil`,
             maxCrawledPlacesPerSearch: maxQueries,
             language: 'pt-BR',
-            countryCode: 'BR'
+            countryCode: 'br'
           })
         }
       );
