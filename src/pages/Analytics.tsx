@@ -2,30 +2,21 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatCard } from "@/components/ui/stat-card";
 import { PerformanceChart } from "@/components/analytics/PerformanceChart";
 import { ActivityFeed } from "@/components/analytics/ActivityFeed";
-import { Map, Users, Send, TrendingUp, Loader2 } from "lucide-react";
+import { Map, Users, Phone, TrendingUp, Loader2 } from "lucide-react";
 import { useLeads } from "@/hooks/useLeads";
-import { useCampaigns } from "@/hooks/useCampaigns";
 import { useMemo } from "react";
 
 export default function Analytics() {
   const { leads, isLoading: leadsLoading, getStats } = useLeads();
-  const { campaigns, isLoading: campaignsLoading } = useCampaigns();
 
   const stats = useMemo(() => getStats(), [getStats]);
-  
-  const campaignStats = useMemo(() => {
-    const totalSent = campaigns.reduce((acc, c) => acc + (c.total_enviados || 0), 0);
-    const totalDelivered = campaigns.reduce((acc, c) => acc + (c.total_entregues || 0), 0);
-    const deliveryRate = totalSent > 0 ? (totalDelivered / totalSent) * 100 : 0;
-    return { totalSent, totalDelivered, deliveryRate };
-  }, [campaigns]);
 
   const chartData = useMemo(() => {
     return stats.leadsByDay.map(day => ({
       date: day.date,
       leads: day.leads,
-      messages: Math.floor(day.leads * 0.8), // Placeholder until we track messages by day
-      delivered: Math.floor(day.leads * 0.75)
+      messages: 0,
+      delivered: 0
     }));
   }, [stats.leadsByDay]);
 
@@ -34,16 +25,12 @@ export default function Analytics() {
       id: lead.id,
       phone: lead.whatsapp_numero ? `+${lead.whatsapp_numero}` : lead.telefone_original || '',
       company: lead.nome_empresa,
-      status: (lead.status === 'entregue' ? 'delivered' : 
-               lead.status === 'enviado' ? 'sent' :
-               lead.status === 'falhou' ? 'failed' : 'pending') as 'delivered' | 'sent' | 'pending' | 'failed',
+      status: 'pending' as 'delivered' | 'sent' | 'pending' | 'failed',
       timestamp: formatTimeAgo(new Date(lead.created_at))
     }));
   }, [leads]);
 
-  const isLoading = leadsLoading || campaignsLoading;
-
-  if (isLoading) {
+  if (leadsLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-96">
@@ -60,38 +47,37 @@ export default function Analytics() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard Analytics</h1>
           <p className="text-muted-foreground">
-            Acompanhe o desempenho das suas campanhas
+            Acompanhe o desempenho das suas extrações
           </p>
         </div>
 
         {/* Stats Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            title="Total de Leads Extraídos"
+            title="Total de Leads"
             value={stats.totalLeads}
-            description="últimos 7 dias"
+            description="todos os leads extraídos"
             icon={Map}
-            trend={stats.leadsThisWeek > 0 ? { value: stats.leadsThisWeek, isPositive: true } : undefined}
             variant="navy"
           />
           <StatCard
-            title="Leads Qualificados"
+            title="Leads com Telefone"
             value={stats.leadsWithPhone}
-            description="com telefone válido"
-            icon={Users}
-            trend={stats.leadsWithPhone > 0 ? { value: Math.round((stats.leadsWithPhone / Math.max(stats.totalLeads, 1)) * 100), isPositive: true } : undefined}
+            description="com WhatsApp válido"
+            icon={Phone}
+            trend={stats.totalLeads > 0 ? { value: Math.round((stats.leadsWithPhone / stats.totalLeads) * 100), isPositive: true } : undefined}
           />
           <StatCard
-            title="Mensagens Enviadas"
-            value={campaignStats.totalSent}
-            description="via WhatsApp"
-            icon={Send}
+            title="Novos Esta Semana"
+            value={stats.leadsThisWeek}
+            description="últimos 7 dias"
+            icon={Users}
             variant="accent"
           />
           <StatCard
-            title="Taxa de Entrega"
-            value={`${campaignStats.deliveryRate.toFixed(1)}%`}
-            description="mensagens entregues"
+            title="Taxa de Telefones"
+            value={stats.totalLeads > 0 ? `${Math.round((stats.leadsWithPhone / stats.totalLeads) * 100)}%` : "0%"}
+            description="leads qualificados"
             icon={TrendingUp}
           />
         </div>
