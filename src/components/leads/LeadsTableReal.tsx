@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Download, Send, Phone, Globe, Star, MapPin, Loader2, Trash2, Copy, Check } from 'lucide-react';
+import { Download, Send, Phone, Globe, Star, MapPin, Loader2, Trash2, Copy, Check, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -64,28 +65,24 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
     }
   };
 
-  const exportToCSV = () => {
-    const leadsToExport = leads.filter(l => selectedLeads.has(l.id));
-    if (leadsToExport.length === 0) return;
+  const exportPhonesToXLSX = () => {
+    const leadsToExport = leads.filter(l => selectedLeads.has(l.id) && l.whatsapp_numero);
+    if (leadsToExport.length === 0) {
+      toast.error('Nenhum lead com telefone válido selecionado');
+      return;
+    }
 
-    const headers = ['Nome', 'WhatsApp', 'Telefone Original', 'Site', 'Endereço', 'Categoria', 'Avaliação'];
-    const rows = leadsToExport.map(l => [
-      l.nome_empresa,
-      l.whatsapp_numero || '',
-      l.telefone_original || '',
-      l.site || '',
-      l.endereco || '',
-      l.categoria || '',
-      l.avaliacao?.toString() || ''
-    ]);
+    // Extrair somente números
+    const phoneData = leadsToExport.map(l => ({
+      'Telefone': l.whatsapp_numero ? `+${l.whatsapp_numero}` : '',
+    }));
 
-    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `leads_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    toast.success(`${leadsToExport.length} leads exportados!`);
+    const worksheet = XLSX.utils.json_to_sheet(phoneData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Telefones');
+    
+    XLSX.writeFile(workbook, `telefones_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success(`${leadsToExport.length} números exportados!`);
   };
 
   const handleExtractPhones = () => {
@@ -145,11 +142,11 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={exportToCSV}
+            onClick={exportPhonesToXLSX}
             disabled={selectedLeads.size === 0}
           >
-            <Download className="h-4 w-4" />
-            Exportar CSV
+            <FileSpreadsheet className="h-4 w-4" />
+            Exportar Telefones (XLSX)
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>

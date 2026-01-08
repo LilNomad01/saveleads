@@ -2,7 +2,6 @@ import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Map,
-  MessageCircle,
   BarChart3,
   ChevronLeft,
   ChevronRight,
@@ -18,12 +17,6 @@ const navItems = [
     description: "Google Maps",
     icon: Map,
     path: "/",
-  },
-  {
-    title: "Disparos WhatsApp",
-    description: "Gerenciador",
-    icon: MessageCircle,
-    path: "/whatsapp",
   },
   {
     title: "Analytics",
