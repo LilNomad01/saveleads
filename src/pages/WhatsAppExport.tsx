@@ -5,14 +5,19 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLeads } from "@/hooks/useLeads";
 import { detectPhoneType, formatWhatsAppLink } from "@/lib/phoneUtils";
-import { MessageCircle, Search, Building2, MapPin, Star, ExternalLink, Phone, ArrowLeft } from "lucide-react";
+import { MessageCircle, Search, Building2, MapPin, Star, ExternalLink, Phone, ArrowLeft, CheckCircle2, Clock } from "lucide-react";
+import { toast } from "sonner";
+
+type MessageFilter = 'all' | 'sent' | 'pending';
 
 const WhatsAppExport = () => {
   const navigate = useNavigate();
-  const { leads, isLoading } = useLeads();
+  const { leads, isLoading, markMessageSent } = useLeads();
   const [searchTerm, setSearchTerm] = useState("");
+  const [messageFilter, setMessageFilter] = useState<MessageFilter>('all');
 
   // Filter only mobile numbers (WhatsApp compatible)
   const mobileLeads = useMemo(() => {
@@ -22,23 +27,46 @@ const WhatsAppExport = () => {
     });
   }, [leads]);
 
-  // Apply search filter
+  // Apply search and message filter
   const filteredLeads = useMemo(() => {
-    if (!searchTerm) return mobileLeads;
+    let result = mobileLeads;
     
-    const term = searchTerm.toLowerCase();
-    return mobileLeads.filter(lead => 
-      lead.nome_empresa.toLowerCase().includes(term) ||
-      lead.categoria?.toLowerCase().includes(term) ||
-      lead.endereco?.toLowerCase().includes(term) ||
-      lead.whatsapp_numero?.includes(term) ||
-      lead.telefone_original?.includes(term)
-    );
-  }, [mobileLeads, searchTerm]);
+    // Message status filter
+    if (messageFilter === 'sent') {
+      result = result.filter(lead => lead.mensagem_enviada);
+    } else if (messageFilter === 'pending') {
+      result = result.filter(lead => !lead.mensagem_enviada);
+    }
+    
+    // Search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(lead => 
+        lead.nome_empresa.toLowerCase().includes(term) ||
+        lead.categoria?.toLowerCase().includes(term) ||
+        lead.endereco?.toLowerCase().includes(term) ||
+        lead.whatsapp_numero?.includes(term) ||
+        lead.telefone_original?.includes(term)
+      );
+    }
+    
+    return result;
+  }, [mobileLeads, searchTerm, messageFilter]);
 
-  const handleWhatsAppClick = (phoneNumber: string) => {
+  // Stats
+  const stats = useMemo(() => ({
+    total: mobileLeads.length,
+    sent: mobileLeads.filter(l => l.mensagem_enviada).length,
+    pending: mobileLeads.filter(l => !l.mensagem_enviada).length,
+  }), [mobileLeads]);
+
+  const handleWhatsAppClick = async (leadId: string, phoneNumber: string) => {
     const link = formatWhatsAppLink(phoneNumber);
     if (link) {
+      // Mark as sent
+      await markMessageSent(leadId);
+      toast.success('Mensagem marcada como enviada!');
+      // Open WhatsApp
       window.open(link, '_blank');
     }
   };
@@ -66,7 +94,7 @@ const WhatsAppExport = () => {
         {/* Stats Card */}
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-500/10 rounded-lg">
                   <MessageCircle className="h-6 w-6 text-green-500" />
@@ -74,24 +102,43 @@ const WhatsAppExport = () => {
                 <div>
                   <CardTitle className="text-lg">Números Móveis Disponíveis</CardTitle>
                   <CardDescription>
-                    {filteredLeads.length} de {mobileLeads.length} números WhatsApp
+                    {filteredLeads.length} de {stats.total} números WhatsApp
                   </CardDescription>
                 </div>
               </div>
-              <Badge variant="secondary" className="text-lg px-4 py-1">
-                {mobileLeads.length} total
-              </Badge>
+              <div className="flex gap-2">
+                <Badge variant="outline" className="gap-1 px-3 py-1">
+                  <CheckCircle2 className="h-3 w-3 text-green-500" />
+                  {stats.sent} enviadas
+                </Badge>
+                <Badge variant="outline" className="gap-1 px-3 py-1">
+                  <Clock className="h-3 w-3 text-orange-500" />
+                  {stats.pending} pendentes
+                </Badge>
+              </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por empresa, categoria, endereço ou telefone..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+          <CardContent className="space-y-4">
+            <div className="flex gap-3 flex-wrap">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por empresa, categoria, endereço ou telefone..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Select value={messageFilter} onValueChange={(v) => setMessageFilter(v as MessageFilter)}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filtrar status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="sent">Mensagem Enviada</SelectItem>
+                  <SelectItem value="pending">Pendentes</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
@@ -118,10 +165,19 @@ const WhatsAppExport = () => {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredLeads.map((lead) => {
               const phone = lead.whatsapp_numero || lead.telefone_original;
+              const isSent = lead.mensagem_enviada;
               
               return (
-                <Card key={lead.id} className="hover:shadow-md transition-shadow">
+                <Card key={lead.id} className={`hover:shadow-md transition-shadow ${isSent ? 'border-green-500/30 bg-green-50/30 dark:bg-green-950/10' : ''}`}>
                   <CardContent className="p-4 space-y-3">
+                    {/* Status Badge */}
+                    {isSent && (
+                      <Badge className="bg-green-600 hover:bg-green-700 gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Mensagem Enviada
+                      </Badge>
+                    )}
+
                     {/* Company Name */}
                     <div className="flex items-start gap-2">
                       <Building2 className="h-4 w-4 text-muted-foreground mt-1 shrink-0" />
@@ -166,13 +222,38 @@ const WhatsAppExport = () => {
 
                     {/* WhatsApp Button */}
                     <Button
-                      onClick={() => handleWhatsAppClick(phone!)}
-                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => handleWhatsAppClick(lead.id, phone!)}
+                      className={isSent 
+                        ? "w-full bg-green-700 hover:bg-green-800 text-white" 
+                        : "w-full bg-green-600 hover:bg-green-700 text-white"
+                      }
                     >
-                      <MessageCircle className="h-4 w-4 mr-2" />
-                      Enviar Mensagem
+                      {isSent ? (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 mr-2" />
+                          Enviar Novamente
+                        </>
+                      ) : (
+                        <>
+                          <MessageCircle className="h-4 w-4 mr-2" />
+                          Enviar Mensagem
+                        </>
+                      )}
                       <ExternalLink className="h-3 w-3 ml-2" />
                     </Button>
+
+                    {/* Sent timestamp */}
+                    {isSent && lead.data_mensagem_enviada && (
+                      <p className="text-xs text-muted-foreground text-center">
+                        Enviada em {new Date(lead.data_mensagem_enviada).toLocaleDateString('pt-BR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               );

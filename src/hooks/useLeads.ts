@@ -20,13 +20,17 @@ export interface Lead {
   created_at: string;
   updated_at: string;
   user_id: string | null;
+  mensagem_enviada: boolean | null;
+  data_mensagem_enviada: string | null;
 }
 
 export interface LeadsStats {
   totalLeads: number;
   leadsWithPhone: number;
   leadsThisWeek: number;
-  leadsByDay: { date: string; leads: number }[];
+  messagesSent: number;
+  messagesThisWeek: number;
+  leadsByDay: { date: string; leads: number; messages: number }[];
 }
 
 export function useLeads() {
@@ -101,38 +105,84 @@ export function useLeads() {
     }
   }, [user]);
 
+  const markMessageSent = useCallback(async (leadId: string) => {
+    if (!user) return false;
+    
+    try {
+      const { error: updateError } = await supabase
+        .from('leads')
+        .update({ 
+          mensagem_enviada: true, 
+          data_mensagem_enviada: new Date().toISOString(),
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', leadId)
+        .eq('user_id', user.id);
+      
+      if (updateError) throw updateError;
+      
+      setLeads(prev => prev.map(lead => 
+        lead.id === leadId ? { 
+          ...lead, 
+          mensagem_enviada: true, 
+          data_mensagem_enviada: new Date().toISOString() 
+        } : lead
+      ));
+      return true;
+    } catch (err: any) {
+      console.error('Error marking message sent:', err);
+      return false;
+    }
+  }, [user]);
+
   const getStats = useCallback((): LeadsStats => {
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     
     const leadsThisWeek = leads.filter(l => new Date(l.created_at) >= weekAgo);
+    const messagesSent = leads.filter(l => l.mensagem_enviada).length;
+    const messagesThisWeek = leads.filter(l => 
+      l.mensagem_enviada && l.data_mensagem_enviada && new Date(l.data_mensagem_enviada) >= weekAgo
+    ).length;
     
     // Group by day
-    const dayMap: Record<string, number> = {};
+    const dayMap: Record<string, { leads: number; messages: number }> = {};
     const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
       const key = d.toISOString().split('T')[0];
-      dayMap[key] = 0;
+      dayMap[key] = { leads: 0, messages: 0 };
     }
     
     leadsThisWeek.forEach(l => {
       const key = l.created_at.split('T')[0];
       if (dayMap[key] !== undefined) {
-        dayMap[key]++;
+        dayMap[key].leads++;
+      }
+    });
+
+    // Count messages by day they were sent
+    leads.forEach(l => {
+      if (l.mensagem_enviada && l.data_mensagem_enviada) {
+        const key = l.data_mensagem_enviada.split('T')[0];
+        if (dayMap[key] !== undefined) {
+          dayMap[key].messages++;
+        }
       }
     });
     
-    const leadsByDay = Object.entries(dayMap).map(([date, count]) => {
+    const leadsByDay = Object.entries(dayMap).map(([date, counts]) => {
       const d = new Date(date);
-      return { date: dayNames[d.getDay()], leads: count };
+      return { date: dayNames[d.getDay()], leads: counts.leads, messages: counts.messages };
     });
 
     return {
       totalLeads: leads.length,
       leadsWithPhone: leads.filter(l => l.whatsapp_numero).length,
       leadsThisWeek: leadsThisWeek.length,
+      messagesSent,
+      messagesThisWeek,
       leadsByDay
     };
   }, [leads]);
@@ -192,6 +242,7 @@ export function useLeads() {
     refetch: fetchLeads, 
     deleteLeads, 
     updateLeadStatus,
+    markMessageSent,
     getStats,
     extractPhoneNumbers
   };

@@ -2,9 +2,10 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatCard } from "@/components/ui/stat-card";
 import { PerformanceChart } from "@/components/analytics/PerformanceChart";
 import { ActivityFeed } from "@/components/analytics/ActivityFeed";
-import { Map, Users, Phone, TrendingUp, Loader2 } from "lucide-react";
+import { Map, Users, Phone, TrendingUp, Loader2, MessageCircle, CheckCircle2 } from "lucide-react";
 import { useLeads } from "@/hooks/useLeads";
 import { useMemo } from "react";
+import { isWhatsAppCompatible } from "@/lib/phoneUtils";
 
 export default function Analytics() {
   const { leads, isLoading: leadsLoading, getStats } = useLeads();
@@ -15,20 +16,32 @@ export default function Analytics() {
     return stats.leadsByDay.map(day => ({
       date: day.date,
       leads: day.leads,
-      messages: 0,
-      delivered: 0
+      messages: day.messages,
+      delivered: day.messages
     }));
   }, [stats.leadsByDay]);
 
   const recentActivities = useMemo(() => {
-    return leads.slice(0, 8).map(lead => ({
+    // Sort by most recent activity (message sent or created)
+    const sortedLeads = [...leads].sort((a, b) => {
+      const dateA = a.data_mensagem_enviada || a.created_at;
+      const dateB = b.data_mensagem_enviada || b.created_at;
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
+    });
+
+    return sortedLeads.slice(0, 8).map(lead => ({
       id: lead.id,
       phone: lead.whatsapp_numero ? `+${lead.whatsapp_numero}` : lead.telefone_original || '',
       company: lead.nome_empresa,
-      status: 'pending' as 'delivered' | 'sent' | 'pending' | 'failed',
-      timestamp: formatTimeAgo(new Date(lead.created_at))
+      status: lead.mensagem_enviada ? 'sent' as const : 'pending' as const,
+      timestamp: formatTimeAgo(new Date(lead.data_mensagem_enviada || lead.created_at))
     }));
   }, [leads]);
+
+  // Mobile leads count
+  const mobileLeadsCount = useMemo(() => 
+    leads.filter(l => isWhatsAppCompatible(l.whatsapp_numero)).length
+  , [leads]);
 
   if (leadsLoading) {
     return (
@@ -52,7 +65,7 @@ export default function Analytics() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatCard
             title="Total de Leads"
             value={stats.totalLeads}
@@ -61,23 +74,29 @@ export default function Analytics() {
             variant="navy"
           />
           <StatCard
-            title="Leads com Telefone"
-            value={stats.leadsWithPhone}
-            description="com WhatsApp válido"
+            title="WhatsApp Válidos"
+            value={mobileLeadsCount}
+            description="números móveis"
             icon={Phone}
-            trend={stats.totalLeads > 0 ? { value: Math.round((stats.leadsWithPhone / stats.totalLeads) * 100), isPositive: true } : undefined}
+            trend={stats.totalLeads > 0 ? { value: Math.round((mobileLeadsCount / stats.totalLeads) * 100), isPositive: true } : undefined}
           />
           <StatCard
-            title="Novos Esta Semana"
-            value={stats.leadsThisWeek}
-            description="últimos 7 dias"
-            icon={Users}
+            title="Mensagens Enviadas"
+            value={stats.messagesSent}
+            description="total enviadas"
+            icon={MessageCircle}
             variant="accent"
           />
           <StatCard
-            title="Taxa de Telefones"
-            value={stats.totalLeads > 0 ? `${Math.round((stats.leadsWithPhone / stats.totalLeads) * 100)}%` : "0%"}
-            description="leads qualificados"
+            title="Enviadas Esta Semana"
+            value={stats.messagesThisWeek}
+            description="últimos 7 dias"
+            icon={CheckCircle2}
+          />
+          <StatCard
+            title="Taxa de Contato"
+            value={mobileLeadsCount > 0 ? `${Math.round((stats.messagesSent / mobileLeadsCount) * 100)}%` : "0%"}
+            description="leads contatados"
             icon={TrendingUp}
           />
         </div>
