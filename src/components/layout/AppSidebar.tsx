@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Zap,
   Settings,
+  MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,12 @@ const navItems = [
     description: "Google Maps",
     icon: Map,
     path: "/",
+  },
+  {
+    title: "Exportar WhatsApp",
+    description: "Enviar Mensagens",
+    icon: MessageCircle,
+    path: "/whatsapp-export",
   },
   {
     title: "Analytics",

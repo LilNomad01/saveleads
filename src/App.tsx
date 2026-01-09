@@ -9,6 +9,7 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import WhatsAppExport from "./pages/WhatsAppExport";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/whatsapp-export" element={<WhatsAppExport />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
