@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Send, Phone, Globe, Star, MapPin, Loader2, Trash2, Copy, Check, FileSpreadsheet, Smartphone, MessageCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Send, Phone, Globe, Star, MapPin, Loader2, Trash2, Copy, Check, FileSpreadsheet, Smartphone, MessageCircle, ExternalLink } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -51,6 +52,7 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
 };
 
 export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: LeadsTableRealProps) {
+  const navigate = useNavigate();
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -279,13 +281,21 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
             Exportar Selecionados
           </Button>
           <Button 
-            variant="default" 
+            variant="outline" 
             size="sm" 
             onClick={exportMobileOnly}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Exportar XLSX
+          </Button>
+          <Button 
+            variant="default" 
+            size="sm" 
+            onClick={() => navigate('/whatsapp-export')}
             className="bg-green-600 hover:bg-green-700"
           >
-            <MessageCircle className="h-4 w-4" />
-            Exportar WhatsApp
+            <ExternalLink className="h-4 w-4" />
+            Abrir WhatsApp
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
