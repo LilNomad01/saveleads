@@ -90,9 +90,11 @@ export type Database = {
           created_at: string
           data_disparo: string | null
           data_extracao: string
+          data_mensagem_enviada: string | null
           endereco: string | null
           fonte: string | null
           id: string
+          mensagem_enviada: boolean | null
           nome_empresa: string
           site: string | null
           status: string | null
@@ -108,9 +110,11 @@ export type Database = {
           created_at?: string
           data_disparo?: string | null
           data_extracao?: string
+          data_mensagem_enviada?: string | null
           endereco?: string | null
           fonte?: string | null
           id?: string
+          mensagem_enviada?: boolean | null
           nome_empresa: string
           site?: string | null
           status?: string | null
@@ -126,9 +130,11 @@ export type Database = {
           created_at?: string
           data_disparo?: string | null
           data_extracao?: string
+          data_mensagem_enviada?: string | null
           endereco?: string | null
           fonte?: string | null
           id?: string
+          mensagem_enviada?: boolean | null
           nome_empresa?: string
           site?: string | null
           status?: string | null
