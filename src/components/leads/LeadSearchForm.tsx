@@ -31,16 +31,16 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-card rounded-xl p-6 shadow-card border border-border">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-foreground">Buscar Leads no Google Maps</h3>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+    <form onSubmit={handleSubmit} className="bg-card rounded-xl p-4 sm:p-6 shadow-card border border-border">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+        <h3 className="text-base sm:text-lg font-semibold text-foreground">Buscar Leads no Google Maps</h3>
+        <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
           <Settings2 className="h-4 w-4" />
           <span>Powered by Apify</span>
         </div>
       </div>
       
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="space-y-2">
           <Label htmlFor="keyword" className="text-sm font-medium">
             O que você busca?
@@ -98,7 +98,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
           />
         </div>
         
-        <div className="flex items-end">
+        <div className="flex items-end sm:col-span-2 lg:col-span-1">
           <Button
             type="submit"
             size="lg"
@@ -108,12 +108,12 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
             {isLoading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Extraindo...
+                <span className="ml-2">Extraindo...</span>
               </>
             ) : (
               <>
                 <Search className="h-4 w-4" />
-                Pesquisar
+                <span className="ml-2">Pesquisar</span>
               </>
             )}
           </Button>

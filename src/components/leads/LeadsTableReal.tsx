@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Send, Phone, Globe, Star, MapPin, Loader2, Trash2, Copy, Check, FileSpreadsheet, Smartphone, MessageCircle, ExternalLink } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -53,6 +54,7 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
 
 export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: LeadsTableRealProps) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -222,7 +224,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
   return (
     <div className="bg-card rounded-xl shadow-card border border-border overflow-hidden">
       {/* Filters */}
-      <div className="p-4 border-b border-border">
+      <div className="p-3 sm:p-4 border-b border-border">
         <LeadFilters 
           filters={filters} 
           onFiltersChange={setFilters}
@@ -231,102 +233,249 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
       </div>
 
       {/* Stats Bar */}
-      <div className="px-4 py-2 bg-muted/30 border-b border-border flex items-center gap-4 text-sm">
-        <span className="text-muted-foreground">
-          {stats.total} leads encontrados
+      <div className="px-3 sm:px-4 py-2 bg-muted/30 border-b border-border flex items-center gap-2 sm:gap-4 text-xs sm:text-sm overflow-x-auto">
+        <span className="text-muted-foreground whitespace-nowrap">
+          {stats.total} leads
         </span>
-        <Badge variant="outline" className="gap-1">
+        <Badge variant="outline" className="gap-1 shrink-0">
           <Smartphone className="h-3 w-3 text-green-500" />
           {stats.mobile} móveis
         </Badge>
-        <Badge variant="outline" className="gap-1">
+        <Badge variant="outline" className="gap-1 shrink-0">
           <Phone className="h-3 w-3 text-blue-500" />
           {stats.landline} fixos
         </Badge>
       </div>
 
       {/* Actions Bar */}
-      <div className="p-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h3 className="font-semibold text-foreground">Leads Extraídos</h3>
-          <p className="text-sm text-muted-foreground">
-            {selectedLeads.size} selecionados
-          </p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={selectAllMobile}
-          >
-            <Smartphone className="h-4 w-4" />
-            Selecionar Móveis
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleExtractPhones}
-            disabled={selectedLeads.size === 0}
-          >
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            {copied ? 'Copiado!' : 'Copiar Telefones'}
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={exportPhonesToXLSX}
-            disabled={selectedLeads.size === 0}
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            Exportar Selecionados
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={exportMobileOnly}
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            Exportar XLSX
-          </Button>
-          <Button 
-            variant="default" 
-            size="sm" 
-            onClick={() => navigate('/whatsapp-export')}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            <ExternalLink className="h-4 w-4" />
-            Abrir WhatsApp
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button 
-                variant="destructive" 
-                size="sm"
-                disabled={selectedLeads.size === 0 || isDeleting}
-              >
-                <Trash2 className="h-4 w-4" />
-                Excluir ({selectedLeads.size})
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Excluir leads selecionados?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Esta ação não pode ser desfeita. {selectedLeads.size} lead(s) serão excluídos permanentemente.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                  {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Excluir'}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+      <div className="p-3 sm:p-4 border-b border-border">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-foreground text-sm sm:text-base">Leads Extraídos</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              {selectedLeads.size} selecionados
+            </p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {isMobile ? (
+              <>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={selectAllMobile}
+                  className="flex-1 text-xs"
+                >
+                  <Smartphone className="h-3 w-3" />
+                  Móveis
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={() => navigate('/whatsapp-export')}
+                  className="bg-green-600 hover:bg-green-700 flex-1 text-xs"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  WhatsApp
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="destructive" 
+                      size="sm"
+                      disabled={selectedLeads.size === 0 || isDeleting}
+                      className="text-xs"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      {selectedLeads.size > 0 && `(${selectedLeads.size})`}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="max-w-[90vw]">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Excluir leads?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {selectedLeads.size} lead(s) serão excluídos permanentemente.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Excluir'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            ) : (
+              <>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={selectAllMobile}
+                >
+                  <Smartphone className="h-4 w-4" />
+                  Selecionar Móveis
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleExtractPhones}
+                  disabled={selectedLeads.size === 0}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copied ? 'Copiado!' : 'Copiar Telefones'}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={exportPhonesToXLSX}
+                  disabled={selectedLeads.size === 0}
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Exportar Selecionados
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={exportMobileOnly}
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Exportar XLSX
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={() => navigate('/whatsapp-export')}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Abrir WhatsApp
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="destructive" 
+                      size="sm"
+                      disabled={selectedLeads.size === 0 || isDeleting}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Excluir ({selectedLeads.size})
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Excluir leads selecionados?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Esta ação não pode ser desfeita. {selectedLeads.size} lead(s) serão excluídos permanentemente.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Excluir'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Mobile Cards View */}
+      {isMobile ? (
+        <div className="p-3 space-y-3">
+          {filteredLeads.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              {leads.length === 0 
+                ? 'Nenhum lead encontrado. Inicie uma extração.'
+                : 'Nenhum lead corresponde aos filtros.'}
+            </div>
+          ) : (
+            filteredLeads.map((lead) => {
+              const status = statusConfig[lead.status || 'extraido'];
+              const phoneType = detectPhoneType(lead.whatsapp_numero);
+              const isMobilePhone = phoneType === 'mobile';
+              
+              return (
+                <div 
+                  key={lead.id}
+                  className={cn(
+                    "p-3 rounded-lg border border-border bg-background",
+                    selectedLeads.has(lead.id) && 'bg-muted/50 border-primary/50'
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <Checkbox 
+                      checked={selectedLeads.has(lead.id)}
+                      onCheckedChange={() => toggleLead(lead.id)}
+                      className="mt-1"
+                    />
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{lead.nome_empresa}</p>
+                          {lead.endereco && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                              <MapPin className="h-3 w-3 shrink-0" />
+                              {lead.endereco}
+                            </p>
+                          )}
+                        </div>
+                        <Badge variant={status.variant} className="shrink-0 text-xs">
+                          {status.label}
+                        </Badge>
+                      </div>
+                      
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        {lead.whatsapp_numero && (
+                          <span className={cn(
+                            "flex items-center gap-1 font-medium",
+                            isMobilePhone ? "text-green-600" : "text-blue-600"
+                          )}>
+                            {isMobilePhone ? <Smartphone className="h-3 w-3" /> : <Phone className="h-3 w-3" />}
+                            +{lead.whatsapp_numero}
+                          </span>
+                        )}
+                        {lead.avaliacao && (
+                          <span className="flex items-center gap-1">
+                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                            {lead.avaliacao}
+                          </span>
+                        )}
+                        {lead.site && (
+                          <a 
+                            href={`https://${lead.site}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-primary hover:underline"
+                          >
+                            <Globe className="h-3 w-3" />
+                            Site
+                          </a>
+                        )}
+                      </div>
+                      
+                      {isMobilePhone && lead.whatsapp_numero && (
+                        <Button
+                          size="sm"
+                          className="w-full bg-green-600 hover:bg-green-700 text-xs h-8"
+                          onClick={() => openWhatsApp(lead.whatsapp_numero!)}
+                        >
+                          <MessageCircle className="h-3 w-3 mr-1" />
+                          WhatsApp
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        /* Desktop Table View */
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -469,6 +618,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
           </TableBody>
         </Table>
       </div>
+      )}
     </div>
   );
 }

@@ -57,12 +57,12 @@ export function LeadFilters({ filters, onFiltersChange, statusOptions }: LeadFil
   };
 
   return (
-    <div className="flex flex-col sm:flex-row gap-3">
+    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
       {/* Search */}
       <div className="relative flex-1">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar empresa, telefone, endereço..."
+          placeholder="Buscar empresa, telefone..."
           value={filters.search}
           onChange={(e) => updateFilter('search', e.target.value)}
           className="pl-9"
@@ -74,7 +74,7 @@ export function LeadFilters({ filters, onFiltersChange, statusOptions }: LeadFil
         value={filters.phoneType}
         onValueChange={(value) => updateFilter('phoneType', value as LeadFiltersState['phoneType'])}
       >
-        <SelectTrigger className="w-[160px]">
+        <SelectTrigger className="w-full sm:w-[160px]">
           <SelectValue placeholder="Tipo telefone" />
         </SelectTrigger>
         <SelectContent>

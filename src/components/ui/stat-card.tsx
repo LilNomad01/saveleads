@@ -41,26 +41,26 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "rounded-xl p-6 shadow-card hover:shadow-card-hover transition-all duration-300 animate-slide-up",
+        "rounded-xl p-4 sm:p-6 shadow-card hover:shadow-card-hover transition-all duration-300 animate-slide-up",
         variants[variant],
         className
       )}
     >
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
+      <div className="flex items-start justify-between gap-2">
+        <div className="space-y-0.5 sm:space-y-1 min-w-0">
           <p
             className={cn(
-              "text-sm font-medium",
+              "text-xs sm:text-sm font-medium truncate",
               variant === "default" ? "text-muted-foreground" : "opacity-80"
             )}
           >
             {title}
           </p>
-          <p className="text-3xl font-bold tracking-tight">{value}</p>
+          <p className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight">{value}</p>
           {description && (
             <p
               className={cn(
-                "text-xs",
+                "text-[10px] sm:text-xs truncate",
                 variant === "default" ? "text-muted-foreground" : "opacity-70"
               )}
             >
@@ -70,17 +70,17 @@ export function StatCard({
           {trend && (
             <p
               className={cn(
-                "text-xs font-medium flex items-center gap-1",
+                "text-[10px] sm:text-xs font-medium flex items-center gap-1",
                 trend.isPositive ? "text-success" : "text-destructive"
               )}
             >
               {trend.isPositive ? "↑" : "↓"} {Math.abs(trend.value)}%
-              <span className="opacity-60">vs. semana anterior</span>
+              <span className="opacity-60 hidden sm:inline">vs. semana anterior</span>
             </p>
           )}
         </div>
-        <div className={cn("p-3 rounded-xl", iconVariants[variant])}>
-          <Icon className="h-5 w-5" />
+        <div className={cn("p-2 sm:p-3 rounded-xl shrink-0", iconVariants[variant])}>
+          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
         </div>
       </div>
     </div>
