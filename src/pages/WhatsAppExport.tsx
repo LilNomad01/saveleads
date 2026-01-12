@@ -75,17 +75,18 @@ const WhatsAppExport = () => {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <Button 
             variant="ghost" 
             size="icon"
+            className="shrink-0"
             onClick={() => navigate(-1)}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Exportar WhatsApp</h1>
-            <p className="text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">Exportar WhatsApp</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
               Clique nos botões para enviar mensagem via WhatsApp
             </p>
           </div>
@@ -94,24 +95,24 @@ const WhatsAppExport = () => {
         {/* Stats Card */}
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-500/10 rounded-lg">
-                  <MessageCircle className="h-6 w-6 text-green-500" />
+                <div className="p-2 bg-green-500/10 rounded-lg shrink-0">
+                  <MessageCircle className="h-5 w-5 sm:h-6 sm:w-6 text-green-500" />
                 </div>
-                <div>
-                  <CardTitle className="text-lg">Números Móveis Disponíveis</CardTitle>
-                  <CardDescription>
+                <div className="min-w-0">
+                  <CardTitle className="text-base sm:text-lg">Números Móveis Disponíveis</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">
                     {filteredLeads.length} de {stats.total} números WhatsApp
                   </CardDescription>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <Badge variant="outline" className="gap-1 px-3 py-1">
+              <div className="flex gap-2 self-start sm:self-auto">
+                <Badge variant="outline" className="gap-1 px-2 sm:px-3 py-1 text-xs sm:text-sm">
                   <CheckCircle2 className="h-3 w-3 text-green-500" />
                   {stats.sent} enviadas
                 </Badge>
-                <Badge variant="outline" className="gap-1 px-3 py-1">
+                <Badge variant="outline" className="gap-1 px-2 sm:px-3 py-1 text-xs sm:text-sm">
                   <Clock className="h-3 w-3 text-orange-500" />
                   {stats.pending} pendentes
                 </Badge>
@@ -119,18 +120,18 @@ const WhatsAppExport = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-3 flex-wrap">
-              <div className="relative flex-1 min-w-[200px]">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por empresa, categoria, endereço ou telefone..."
+                  placeholder="Buscar empresa, categoria..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
                 />
               </div>
               <Select value={messageFilter} onValueChange={(v) => setMessageFilter(v as MessageFilter)}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Filtrar status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -162,7 +163,7 @@ const WhatsAppExport = () => {
           </Card>
         ) : (
           /* Leads Grid */
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {filteredLeads.map((lead) => {
               const phone = lead.whatsapp_numero || lead.telefone_original;
               const isSent = lead.mensagem_enviada;

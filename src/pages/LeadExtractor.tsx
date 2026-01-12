@@ -34,15 +34,15 @@ export default function LeadExtractor() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Extrator de Leads B2B</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">Extrator de Leads B2B</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
               Extraia leads reais do Google Maps usando a API Apify
             </p>
           </div>
           {isExtracting && (
-            <Badge variant="outline" className="animate-pulse bg-primary/10 text-primary border-primary">
+            <Badge variant="outline" className="animate-pulse bg-primary/10 text-primary border-primary self-start sm:self-auto">
               <span className="mr-2 h-2 w-2 rounded-full bg-primary animate-ping" />
               Extração em andamento...
             </Badge>
@@ -50,7 +50,7 @@ export default function LeadExtractor() {
         </div>
 
         {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard
             title="Total de Leads"
             value={totalLeads}

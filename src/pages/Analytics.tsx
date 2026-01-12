@@ -58,14 +58,14 @@ export default function Analytics() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard Analytics</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Dashboard Analytics</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">
             Acompanhe o desempenho das suas extrações
           </p>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard
             title="Total de Leads"
             value={stats.totalLeads}
@@ -102,7 +102,7 @@ export default function Analytics() {
         </div>
 
         {/* Chart and Activity */}
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
           <PerformanceChart data={chartData} className="lg:col-span-2" />
           <ActivityFeed activities={recentActivities} />
         </div>
