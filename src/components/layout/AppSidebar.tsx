@@ -20,7 +20,7 @@ const navItems = [
     title: "Extrator de Leads",
     description: "Google Maps",
     icon: Map,
-    path: "/",
+    path: "/app",
   },
   {
     title: "Exportar WhatsApp",
