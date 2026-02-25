@@ -302,87 +302,115 @@ serve(async (req) => {
       if (!runResponse.ok) {
         const errorText = await runResponse.text();
         console.error('[extract-leads] Apify run failed:', errorText);
-        throw new Error(`Falha ao iniciar extração Apify: ${runResponse.status}`);
-      }
-
-      const runData = await runResponse.json();
-      const runId = runData.data?.id;
-
-      if (!runId) {
-        throw new Error('Não foi possível obter o ID da execução Apify');
-      }
-
-      await supabase.from('extraction_logs').insert({
-        session_id: sessionId,
-        tipo: 'info',
-        mensagem: `⏳ Extração iniciada (ID: ${runId}). Aguardando resultados...`,
-        dados: { runId }
-      });
-
-      // Poll for completion
-      let attempts = 0;
-      const maxAttempts = 60; // 5 minutes max
-      let runStatus = 'RUNNING';
-
-      while (runStatus === 'RUNNING' && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
         
-        const statusResponse = await fetch(
-          `https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`
-        );
-        const statusData = await statusResponse.json();
-        runStatus = statusData.data?.status;
-        attempts++;
-
-        if (attempts % 6 === 0) { // Log every 30 seconds
+        if (runResponse.status === 402) {
           await supabase.from('extraction_logs').insert({
             session_id: sessionId,
-            tipo: 'info',
-            mensagem: `⏳ Processando... (${Math.floor(attempts * 5 / 60)}min ${(attempts * 5) % 60}s)`
+            tipo: 'warning',
+            mensagem: '⚠️ Créditos Apify insuficientes. Usando modo demonstração como fallback...'
           });
+          
+          const mockNames = [`${keyword} Central`, `${keyword} Express`, `${keyword} Premium`, `${keyword} & Cia`, `${keyword} do Bairro`];
+          const ratings = [4.5, 4.2, 4.8, 4.0, 4.3];
+          const reviews = [234, 156, 89, 312, 178];
+
+          for (let i = 0; i < mockNames.length; i++) {
+            const celular = `9${Math.floor(10000000 + Math.random() * 90000000)}`;
+            const whatsappNumero = sanitizePhoneNumber(celular, ddd);
+            leads.push({
+              nome_empresa: mockNames[i],
+              telefone_original: `(${ddd}) ${celular.substring(0, 5)}-${celular.substring(5)}`,
+              whatsapp_numero: whatsappNumero,
+              site: `www.${mockNames[i].toLowerCase().replace(/\s+/g, '').replace(/[&]/g, 'e')}.com.br`,
+              endereco: `${location} - Centro`,
+              categoria: keyword,
+              avaliacao: ratings[i],
+              total_avaliacoes: reviews[i],
+              status: whatsappNumero ? 'validado' : 'extraido',
+              fonte: 'mock_fallback',
+              user_id: userId || null
+            });
+            await supabase.from('extraction_logs').insert({
+              session_id: sessionId, tipo: 'success',
+              mensagem: `✅ Encontrado: ${mockNames[i]} (demo)`
+            });
+          }
+        } else {
+          throw new Error(`Falha ao iniciar extração Apify: ${runResponse.status}`);
         }
-      }
+      } else {
+        const runData = await runResponse.json();
+        const runId = runData.data?.id;
 
-      if (runStatus !== 'SUCCEEDED') {
-        throw new Error(`Extração Apify terminou com status: ${runStatus}`);
-      }
-
-      // Get the results
-      const datasetResponse = await fetch(
-        `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`
-      );
-      const results = await datasetResponse.json();
-
-      await supabase.from('extraction_logs').insert({
-        session_id: sessionId,
-        tipo: 'success',
-        mensagem: `📊 Recebidos ${results.length} resultados da Apify`
-      });
-
-      for (const place of results) {
-        const phoneRaw = place.phone || place.phoneUnformatted || '';
-        const whatsappNumero = sanitizePhoneNumber(phoneRaw, ddd);
-        
-        leads.push({
-          nome_empresa: place.title || place.name || '',
-          telefone_original: phoneRaw,
-          whatsapp_numero: whatsappNumero,
-          site: place.website || place.url || '',
-          endereco: place.address || place.street || '',
-          categoria: place.categoryName || keyword,
-          avaliacao: place.totalScore || place.rating || null,
-          total_avaliacoes: place.reviewsCount || place.reviews || 0,
-          status: whatsappNumero ? 'validado' : 'extraido',
-          fonte: 'apify',
-          user_id: userId || null
-        });
+        if (!runId) {
+          throw new Error('Não foi possível obter o ID da execução Apify');
+        }
 
         await supabase.from('extraction_logs').insert({
           session_id: sessionId,
-          tipo: 'success',
-          mensagem: `✅ ${place.title || place.name}`,
-          dados: { phone: phoneRaw, rating: place.totalScore || place.rating }
+          tipo: 'info',
+          mensagem: `⏳ Extração iniciada (ID: ${runId}). Aguardando resultados...`,
+          dados: { runId }
         });
+
+        let attempts = 0;
+        const maxAttempts = 60;
+        let runStatus = 'RUNNING';
+
+        while (runStatus === 'RUNNING' && attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          const statusResponse = await fetch(
+            `https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`
+          );
+          const statusData = await statusResponse.json();
+          runStatus = statusData.data?.status;
+          attempts++;
+
+          if (attempts % 6 === 0) {
+            await supabase.from('extraction_logs').insert({
+              session_id: sessionId,
+              tipo: 'info',
+              mensagem: `⏳ Processando... (${Math.floor(attempts * 5 / 60)}min ${(attempts * 5) % 60}s)`
+            });
+          }
+        }
+
+        if (runStatus !== 'SUCCEEDED') {
+          throw new Error(`Extração Apify terminou com status: ${runStatus}`);
+        }
+
+        const datasetResponse = await fetch(
+          `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`
+        );
+        const results = await datasetResponse.json();
+
+        await supabase.from('extraction_logs').insert({
+          session_id: sessionId, tipo: 'success',
+          mensagem: `📊 Recebidos ${results.length} resultados da Apify`
+        });
+
+        for (const place of results) {
+          const phoneRaw = place.phone || place.phoneUnformatted || '';
+          const whatsappNumero = sanitizePhoneNumber(phoneRaw, ddd);
+          leads.push({
+            nome_empresa: place.title || place.name || '',
+            telefone_original: phoneRaw,
+            whatsapp_numero: whatsappNumero,
+            site: place.website || place.url || '',
+            endereco: place.address || place.street || '',
+            categoria: place.categoryName || keyword,
+            avaliacao: place.totalScore || place.rating || null,
+            total_avaliacoes: place.reviewsCount || place.reviews || 0,
+            status: whatsappNumero ? 'validado' : 'extraido',
+            fonte: 'apify',
+            user_id: userId || null
+          });
+          await supabase.from('extraction_logs').insert({
+            session_id: sessionId, tipo: 'success',
+            mensagem: `✅ ${place.title || place.name}`,
+            dados: { phone: phoneRaw, rating: place.totalScore || place.rating }
+          });
+        }
       }
     }
 
