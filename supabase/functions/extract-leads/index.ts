@@ -285,16 +285,16 @@ serve(async (req) => {
       const maxQueries = maxResults || 50;
 
       const runResponse = await fetch(
-        `https://api.apify.com/v2/acts/compass~crawler-google-places/runs?token=${apifyKey}`,
+        `https://api.apify.com/v2/acts/nwua9Gu5YrADL7ZiP/runs?token=${apifyKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            searchStringsArray: [keyword],
-            locationQuery: `${location}, Brasil`,
+            searchStringsArray: [`${keyword} ${location}, Brasil`],
             maxCrawledPlacesPerSearch: maxQueries,
             language: 'pt-BR',
-            countryCode: 'br'
+            deeperCityScrape: false,
+            skipClosedPlaces: true
           })
         }
       );
