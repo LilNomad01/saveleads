@@ -290,10 +290,11 @@ serve(async (req) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            searchStringsArray: [`${keyword} ${location}, Brasil`],
+            searchStringsArray: [keyword],
+            locationQuery: `${location}, Brasil`,
             maxCrawledPlacesPerSearch: maxQueries,
             language: 'pt-BR',
-            deeperCityScrape: false,
+            deeperCityScrape: true,
             skipClosedPlaces: true
           })
         }
