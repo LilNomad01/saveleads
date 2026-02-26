@@ -11,6 +11,7 @@ import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import WhatsAppExport from "./pages/WhatsAppExport";
+import AutoDispatch from "./pages/AutoDispatch";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/settings" element={<Settings />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/whatsapp-export" element={<WhatsAppExport />} />
+          <Route path="/auto-dispatch" element={<AutoDispatch />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
