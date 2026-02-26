@@ -125,50 +125,51 @@ serve(async (req) => {
 
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Gerar dados simulados baseados na busca
-      const mockBusinesses = [
-        { nome: `${keyword} Central`, rating: 4.5, reviews: 234 },
-        { nome: `${keyword} Express`, rating: 4.2, reviews: 156 },
-        { nome: `${keyword} Premium`, rating: 4.8, reviews: 89 },
-        { nome: `${keyword} & Cia`, rating: 4.0, reviews: 312 },
-        { nome: `${keyword} do Bairro`, rating: 4.3, reviews: 178 },
-        { nome: `${keyword} Família`, rating: 4.6, reviews: 245 },
-        { nome: `${keyword} Tradicional`, rating: 4.1, reviews: 423 },
-        { nome: `${keyword} Gourmet`, rating: 4.7, reviews: 67 },
-        { nome: `${keyword} 24h`, rating: 3.9, reviews: 534 },
-        { nome: `${keyword} VIP`, rating: 4.4, reviews: 123 },
+      // Gerar dados simulados baseados na busca (respeitando o limite solicitado)
+      const mockCount = Math.max(1, maxResults || 50);
+      const mockSuffixes = [
+        'Central',
+        'Express',
+        'Premium',
+        '& Cia',
+        'do Bairro',
+        'Família',
+        'Tradicional',
+        'Gourmet',
+        '24h',
+        'VIP',
       ];
 
-      for (let i = 0; i < mockBusinesses.length; i++) {
-        const business = mockBusinesses[i];
+      for (let i = 0; i < mockCount; i++) {
+        const suffix = mockSuffixes[i % mockSuffixes.length];
+        const businessName = `${keyword} ${suffix}${i >= mockSuffixes.length ? ` ${i + 1}` : ''}`.trim();
+        const rating = Number((3.8 + (i % 12) * 0.1).toFixed(1));
+        const reviews = 50 + (i % 500);
         
         await supabase.from('extraction_logs').insert({
           session_id: sessionId,
           tipo: 'success',
-          mensagem: `✅ Encontrado: ${business.nome}`,
-          dados: { index: i + 1, total: mockBusinesses.length }
+          mensagem: `✅ Encontrado: ${businessName}`,
+          dados: { index: i + 1, total: mockCount }
         });
 
-        // Gerar número aleatório
         const celular = `9${Math.floor(10000000 + Math.random() * 90000000)}`;
         const telefoneOriginal = `(${ddd}) ${celular.substring(0, 5)}-${celular.substring(5)}`;
         const whatsappNumero = sanitizePhoneNumber(celular, ddd);
 
         leads.push({
-          nome_empresa: business.nome,
+          nome_empresa: businessName,
           telefone_original: telefoneOriginal,
           whatsapp_numero: whatsappNumero,
-          site: `www.${business.nome.toLowerCase().replace(/\s+/g, '').replace(/[&]/g, 'e')}.com.br`,
+          site: `www.${businessName.toLowerCase().replace(/\s+/g, '').replace(/[&]/g, 'e')}.com.br`,
           endereco: `${location} - Centro`,
           categoria: keyword,
-          avaliacao: business.rating,
-          total_avaliacoes: business.reviews,
+          avaliacao: rating,
+          total_avaliacoes: reviews,
           status: whatsappNumero ? 'validado' : 'extraido',
           fonte: 'google_maps',
           user_id: userId || null
         });
-
-        await new Promise(resolve => setTimeout(resolve, 300));
       }
 
     } else if (apiProvider === 'serpapi') {
