@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Menu,
   X,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,9 +25,15 @@ const navItems = [
   },
   {
     title: "Exportar WhatsApp",
-    description: "Enviar Mensagens",
+    description: "Enviar Manual",
     icon: MessageCircle,
     path: "/whatsapp-export",
+  },
+  {
+    title: "Disparo Automático",
+    description: "Envio em Massa",
+    icon: Send,
+    path: "/auto-dispatch",
   },
   {
     title: "Analytics",
