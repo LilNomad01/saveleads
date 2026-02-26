@@ -285,7 +285,7 @@ serve(async (req) => {
       const maxQueries = maxResults || 50;
 
       const runResponse = await fetch(
-        `https://api.apify.com/v2/acts/nwua9Gu5YrADL7ZiP/runs?token=${apifyKey}`,
+        `https://api.apify.com/v2/acts/compass~crawler-google-places/runs?token=${apifyKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
