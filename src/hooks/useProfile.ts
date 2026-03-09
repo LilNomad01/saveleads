@@ -39,7 +39,7 @@ export function useProfile() {
     if (error) {
       console.error('Error fetching profile:', error);
     } else {
-      setProfile(data);
+      setProfile(data as unknown as Profile);
     }
     setLoading(false);
   };
