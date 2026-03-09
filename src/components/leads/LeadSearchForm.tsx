@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, MapPin, Loader2, Settings2 } from "lucide-react";
+import { Search, MapPin, Loader2, Database, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,54 +12,138 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 
+export type DataSource = 'google_maps' | 'telegram' | 'google_reviews';
+export type SearchType = 'empresas' | 'grupos' | 'reviews_negativas' | 'usuarios';
+
+const sourceConfig: Record<DataSource, { label: string; emoji: string; searchTypes: { value: SearchType; label: string }[] }> = {
+  google_maps: {
+    label: 'Google Maps',
+    emoji: '🗺️',
+    searchTypes: [
+      { value: 'empresas', label: 'Empresas' },
+    ]
+  },
+  telegram: {
+    label: 'Telegram',
+    emoji: '✈️',
+    searchTypes: [
+      { value: 'grupos', label: 'Grupos' },
+      { value: 'usuarios', label: 'Usuários' },
+    ]
+  },
+  google_reviews: {
+    label: 'Google Reviews',
+    emoji: '⭐',
+    searchTypes: [
+      { value: 'reviews_negativas', label: 'Reviews Negativas (≤2★)' },
+      { value: 'empresas', label: 'Empresas' },
+    ]
+  }
+};
+
 interface LeadSearchFormProps {
-  onSearch: (keyword: string, location: string, apiProvider: 'apify' | 'mock', maxResults: number) => void;
+  onSearch: (params: {
+    source: DataSource;
+    searchType: SearchType;
+    query: string;
+    location: string;
+    maxResults: number;
+    apiProvider: 'apify' | 'mock';
+  }) => void;
   isLoading: boolean;
 }
 
 export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
-  const [keyword, setKeyword] = useState("");
+  const [source, setSource] = useState<DataSource>('google_maps');
+  const [searchType, setSearchType] = useState<SearchType>('empresas');
+  const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
+  const [maxResults, setMaxResults] = useState(100);
   const [apiProvider, setApiProvider] = useState<'apify' | 'mock'>('apify');
-  const [maxResults, setMaxResults] = useState(50);
+
+  const currentConfig = sourceConfig[source];
+  const showLocation = source !== 'telegram';
+
+  const handleSourceChange = (newSource: DataSource) => {
+    setSource(newSource);
+    setSearchType(sourceConfig[newSource].searchTypes[0].value);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (keyword && location) {
-      onSearch(keyword, location, apiProvider, maxResults);
+    if (query) {
+      onSearch({ source, searchType, query, location, maxResults, apiProvider });
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="bg-card rounded-xl p-4 sm:p-6 shadow-card border border-border">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-        <h3 className="text-base sm:text-lg font-semibold text-foreground">Buscar Leads no Google Maps</h3>
-        <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
-          <Settings2 className="h-4 w-4" />
-          <span>Powered by Apify</span>
-        </div>
+        <h3 className="text-base sm:text-lg font-semibold text-foreground flex items-center gap-2">
+          <Database className="h-5 w-5 text-primary" />
+          Extrair Dados
+        </h3>
+        <Select value={apiProvider} onValueChange={(v) => setApiProvider(v as 'apify' | 'mock')}>
+          <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="apify">🚀 API Real (Apify)</SelectItem>
+            <SelectItem value="mock">🧪 Demo (Simulado)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+        {/* Fonte de dados */}
         <div className="space-y-2">
-          <Label htmlFor="keyword" className="text-sm font-medium">
-            O que você busca?
-          </Label>
+          <Label className="text-sm font-medium">Fonte de Dados</Label>
+          <Select value={source} onValueChange={(v) => handleSourceChange(v as DataSource)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="google_maps">🗺️ Google Maps</SelectItem>
+              <SelectItem value="telegram">✈️ Telegram</SelectItem>
+              <SelectItem value="google_reviews">⭐ Google Reviews</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Tipo de busca */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Tipo de Busca</Label>
+          <Select value={searchType} onValueChange={(v) => setSearchType(v as SearchType)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {currentConfig.searchTypes.map(st => (
+                <SelectItem key={st.value} value={st.value}>{st.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {/* Query */}
+        <div className="space-y-2">
+          <Label htmlFor="query" className="text-sm font-medium">Query de Busca</Label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              id="keyword"
-              placeholder="Ex: Pizzaria, Advocacia"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
+              id="query"
+              placeholder={source === 'telegram' ? 'Ex: Marketing Digital' : 'Ex: Clínica estética'}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
               className="pl-10"
             />
           </div>
         </div>
         
+        {/* Localização */}
         <div className="space-y-2">
           <Label htmlFor="location" className="text-sm font-medium">
-            Em qual cidade/país?
+            Localização {!showLocation && <span className="text-muted-foreground">(opcional)</span>}
           </Label>
           <div className="relative">
             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -69,41 +153,31 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               className="pl-10"
+              disabled={source === 'telegram'}
             />
           </div>
         </div>
         
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">Fonte de Dados</Label>
-          <Select value={apiProvider} onValueChange={(value) => setApiProvider(value as 'apify' | 'mock')}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="apify">🚀 Apify (Dados Reais)</SelectItem>
-              <SelectItem value="mock">🧪 Demo (Dados Simulados)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        
+        {/* Máx resultados */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Máx. Resultados: {maxResults}</Label>
           <Slider
             value={[maxResults]}
             onValueChange={(value) => setMaxResults(value[0])}
-            min={10}
-            max={200}
-            step={10}
+            min={100}
+            max={5000}
+            step={100}
             className="mt-3"
           />
         </div>
         
-        <div className="flex items-end sm:col-span-2 lg:col-span-1">
+        {/* Botão */}
+        <div className="flex items-end">
           <Button
             type="submit"
             size="lg"
             className="w-full"
-            disabled={isLoading || !keyword || !location}
+            disabled={isLoading || !query}
           >
             {isLoading ? (
               <>
@@ -112,8 +186,8 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
               </>
             ) : (
               <>
-                <Search className="h-4 w-4" />
-                <span className="ml-2">Pesquisar</span>
+                <Filter className="h-4 w-4" />
+                <span className="ml-2">Extrair</span>
               </>
             )}
           </Button>

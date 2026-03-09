@@ -7,6 +7,7 @@ interface Profile {
   user_id: string;
   full_name: string | null;
   apify_api_token: string | null;
+  n8n_webhook_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,12 +39,12 @@ export function useProfile() {
     if (error) {
       console.error('Error fetching profile:', error);
     } else {
-      setProfile(data);
+      setProfile(data as unknown as Profile);
     }
     setLoading(false);
   };
 
-  const updateProfile = async (updates: Partial<Pick<Profile, 'full_name' | 'apify_api_token'>>) => {
+  const updateProfile = async (updates: Partial<Pick<Profile, 'full_name' | 'apify_api_token' | 'n8n_webhook_url'>>) => {
     if (!user) return { error: new Error('Not authenticated') };
 
     const { error } = await supabase

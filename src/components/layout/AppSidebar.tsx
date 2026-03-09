@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
-  Map,
+  Database,
   BarChart3,
   ChevronLeft,
   ChevronRight,
   Zap,
   Settings,
-  MessageCircle,
   Menu,
   X,
-  Send,
+  Workflow,
+  List,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -18,21 +18,21 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 const navItems = [
   {
-    title: "Extrator de Leads",
-    description: "Google Maps",
-    icon: Map,
+    title: "Extração",
+    description: "Multi-fonte",
+    icon: Database,
     path: "/app",
   },
   {
-    title: "Exportar WhatsApp",
-    description: "Enviar Manual",
-    icon: MessageCircle,
-    path: "/whatsapp-export",
+    title: "Leads",
+    description: "Base de dados",
+    icon: List,
+    path: "/leads",
   },
   {
-    title: "Disparo Automático",
-    description: "Envio em Massa",
-    icon: Send,
+    title: "Automação",
+    description: "Fila N8N",
+    icon: Workflow,
     path: "/auto-dispatch",
   },
   {
@@ -55,7 +55,6 @@ export function AppSidebar() {
   const location = useLocation();
   const isMobile = useIsMobile();
 
-  // Close mobile menu when navigating
   const handleNavClick = () => {
     if (isMobile) {
       setMobileOpen(false);
@@ -116,7 +115,7 @@ export function AppSidebar() {
               {!collapsed && (
                 <div className="animate-fade-in">
                   <h1 className="text-lg font-bold text-sidebar-foreground">LeadFlow</h1>
-                  <p className="text-xs text-sidebar-foreground/60">B2B Automation</p>
+                  <p className="text-xs text-sidebar-foreground/60">Lead Intelligence</p>
                 </div>
               )}
             </div>

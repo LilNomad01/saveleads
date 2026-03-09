@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      automation_queue: {
+        Row: {
+          created_at: string
+          erro: string | null
+          fonte: string | null
+          id: string
+          lead_data: Json
+          lead_id: string | null
+          sent_at: string | null
+          status: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          erro?: string | null
+          fonte?: string | null
+          id?: string
+          lead_data?: Json
+          lead_id?: string | null
+          sent_at?: string | null
+          status?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          erro?: string | null
+          fonte?: string | null
+          id?: string
+          lead_data?: Json
+          lead_id?: string | null
+          sent_at?: string | null
+          status?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       campanhas: {
         Row: {
           created_at: string
@@ -87,14 +123,17 @@ export type Database = {
         Row: {
           avaliacao: number | null
           categoria: string | null
+          cidade: string | null
           created_at: string
           data_disparo: string | null
           data_extracao: string
           data_mensagem_enviada: string | null
+          email: string | null
           endereco: string | null
           fonte: string | null
           id: string
           mensagem_enviada: boolean | null
+          metadata_json: Json | null
           nome_empresa: string
           site: string | null
           status: string | null
@@ -107,14 +146,17 @@ export type Database = {
         Insert: {
           avaliacao?: number | null
           categoria?: string | null
+          cidade?: string | null
           created_at?: string
           data_disparo?: string | null
           data_extracao?: string
           data_mensagem_enviada?: string | null
+          email?: string | null
           endereco?: string | null
           fonte?: string | null
           id?: string
           mensagem_enviada?: boolean | null
+          metadata_json?: Json | null
           nome_empresa: string
           site?: string | null
           status?: string | null
@@ -127,14 +169,17 @@ export type Database = {
         Update: {
           avaliacao?: number | null
           categoria?: string | null
+          cidade?: string | null
           created_at?: string
           data_disparo?: string | null
           data_extracao?: string
           data_mensagem_enviada?: string | null
+          email?: string | null
           endereco?: string | null
           fonte?: string | null
           id?: string
           mensagem_enviada?: boolean | null
+          metadata_json?: Json | null
           nome_empresa?: string
           site?: string | null
           status?: string | null
@@ -152,6 +197,7 @@ export type Database = {
           created_at: string
           full_name: string | null
           id: string
+          n8n_webhook_url: string | null
           updated_at: string
           user_id: string
         }
@@ -160,6 +206,7 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          n8n_webhook_url?: string | null
           updated_at?: string
           user_id: string
         }
@@ -168,8 +215,111 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          n8n_webhook_url?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      reviews_negativos: {
+        Row: {
+          autor: string | null
+          cidade: string | null
+          created_at: string
+          data_extracao: string
+          data_review: string | null
+          empresa: string
+          endereco: string | null
+          fonte: string | null
+          id: string
+          rating: number | null
+          rating_medio: number | null
+          review: string | null
+          telefone: string | null
+          total_reviews: number | null
+          user_id: string | null
+          website: string | null
+        }
+        Insert: {
+          autor?: string | null
+          cidade?: string | null
+          created_at?: string
+          data_extracao?: string
+          data_review?: string | null
+          empresa: string
+          endereco?: string | null
+          fonte?: string | null
+          id?: string
+          rating?: number | null
+          rating_medio?: number | null
+          review?: string | null
+          telefone?: string | null
+          total_reviews?: number | null
+          user_id?: string | null
+          website?: string | null
+        }
+        Update: {
+          autor?: string | null
+          cidade?: string | null
+          created_at?: string
+          data_extracao?: string
+          data_review?: string | null
+          empresa?: string
+          endereco?: string | null
+          fonte?: string | null
+          id?: string
+          rating?: number | null
+          rating_medio?: number | null
+          review?: string | null
+          telefone?: string | null
+          total_reviews?: number | null
+          user_id?: string | null
+          website?: string | null
+        }
+        Relationships: []
+      }
+      telegram_leads: {
+        Row: {
+          categoria: string | null
+          created_at: string
+          data_extracao: string
+          descricao: string | null
+          fonte: string | null
+          id: string
+          link: string | null
+          membros: number | null
+          nome: string
+          tipo: string | null
+          user_id: string | null
+          username: string | null
+        }
+        Insert: {
+          categoria?: string | null
+          created_at?: string
+          data_extracao?: string
+          descricao?: string | null
+          fonte?: string | null
+          id?: string
+          link?: string | null
+          membros?: number | null
+          nome: string
+          tipo?: string | null
+          user_id?: string | null
+          username?: string | null
+        }
+        Update: {
+          categoria?: string | null
+          created_at?: string
+          data_extracao?: string
+          descricao?: string | null
+          fonte?: string | null
+          id?: string
+          link?: string | null
+          membros?: number | null
+          nome?: string
+          tipo?: string | null
+          user_id?: string | null
+          username?: string | null
         }
         Relationships: []
       }
