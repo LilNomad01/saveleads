@@ -8,7 +8,14 @@ export function useLeadExtraction() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const startExtraction = useCallback(async (keyword: string, location: string, apiProvider: 'apify' | 'mock' = 'apify', maxResults: number = 50) => {
+  const startExtraction = useCallback(async (
+    keyword: string,
+    location: string,
+    apiProvider: 'apify' | 'mock' = 'apify',
+    maxResults: number = 100,
+    source: string = 'google_maps',
+    searchType: string = 'empresas'
+  ) => {
     const newSessionId = crypto.randomUUID();
     setSessionId(newSessionId);
     setIsExtracting(true);
@@ -21,14 +28,16 @@ export function useLeadExtraction() {
           sessionId: newSessionId,
           apiProvider,
           maxResults,
-          userId: user?.id
+          userId: user?.id,
+          source,
+          searchType
         }
       });
 
       if (error) throw error;
 
       if (data.success) {
-        toast.success(`Extração concluída! ${data.leadsCount} leads encontrados.`);
+        toast.success(`Extração concluída! ${data.leadsCount} resultados encontrados.`);
       } else {
         toast.error('Erro na extração: ' + data.error);
       }
