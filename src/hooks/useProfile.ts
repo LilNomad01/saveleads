@@ -44,7 +44,7 @@ export function useProfile() {
     setLoading(false);
   };
 
-  const updateProfile = async (updates: Partial<Pick<Profile, 'full_name' | 'apify_api_token'>>) => {
+  const updateProfile = async (updates: Partial<Pick<Profile, 'full_name' | 'apify_api_token' | 'n8n_webhook_url'>>) => {
     if (!user) return { error: new Error('Not authenticated') };
 
     const { error } = await supabase
