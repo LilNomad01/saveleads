@@ -7,6 +7,7 @@ interface Profile {
   user_id: string;
   full_name: string | null;
   apify_api_token: string | null;
+  n8n_webhook_url: string | null;
   created_at: string;
   updated_at: string;
 }
