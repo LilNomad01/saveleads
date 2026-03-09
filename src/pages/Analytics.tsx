@@ -2,13 +2,15 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatCard } from "@/components/ui/stat-card";
 import { PerformanceChart } from "@/components/analytics/PerformanceChart";
 import { ActivityFeed } from "@/components/analytics/ActivityFeed";
-import { Map, Users, Phone, TrendingUp, Loader2, MessageCircle, CheckCircle2 } from "lucide-react";
+import { Database, Phone, TrendingUp, Loader2, Workflow, BarChart3 } from "lucide-react";
 import { useLeads } from "@/hooks/useLeads";
+import { useAutomationQueue } from "@/hooks/useAutomationQueue";
 import { useMemo } from "react";
 import { isWhatsAppCompatible } from "@/lib/phoneUtils";
 
 export default function Analytics() {
   const { leads, isLoading: leadsLoading, getStats } = useLeads();
+  const { stats: queueStats } = useAutomationQueue();
 
   const stats = useMemo(() => getStats(), [getStats]);
 
@@ -22,7 +24,6 @@ export default function Analytics() {
   }, [stats.leadsByDay]);
 
   const recentActivities = useMemo(() => {
-    // Sort by most recent activity (message sent or created)
     const sortedLeads = [...leads].sort((a, b) => {
       const dateA = a.data_mensagem_enviada || a.created_at;
       const dateB = b.data_mensagem_enviada || b.created_at;
@@ -38,10 +39,16 @@ export default function Analytics() {
     }));
   }, [leads]);
 
-  // Mobile leads count
   const mobileLeadsCount = useMemo(() => 
     leads.filter(l => isWhatsAppCompatible(l.whatsapp_numero)).length
   , [leads]);
+
+  // Source breakdown
+  const sourceStats = useMemo(() => ({
+    googleMaps: leads.filter(l => l.fonte === 'google_maps' || l.fonte === 'apify').length,
+    telegram: leads.filter(l => l.fonte === 'telegram').length,
+    reviews: leads.filter(l => l.fonte === 'google_reviews').length,
+  }), [leads]);
 
   if (leadsLoading) {
     return (
@@ -56,47 +63,56 @@ export default function Analytics() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Dashboard Analytics</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
+            <BarChart3 className="h-6 w-6 text-primary" />
+            Analytics
+          </h1>
           <p className="text-sm sm:text-base text-muted-foreground">
-            Acompanhe o desempenho das suas extrações
+            Visão geral de todas as fontes de dados
           </p>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard
-            title="Total de Leads"
+            title="Total Leads"
             value={stats.totalLeads}
-            description="todos os leads extraídos"
-            icon={Map}
+            description="todas as fontes"
+            icon={Database}
             variant="navy"
           />
           <StatCard
-            title="WhatsApp Válidos"
-            value={mobileLeadsCount}
-            description="números móveis"
-            icon={Phone}
-            trend={stats.totalLeads > 0 ? { value: Math.round((mobileLeadsCount / stats.totalLeads) * 100), isPositive: true } : undefined}
+            title="Google Maps"
+            value={sourceStats.googleMaps}
+            description="leads"
+            icon={Database}
           />
           <StatCard
-            title="Mensagens Enviadas"
-            value={stats.messagesSent}
-            description="total enviadas"
-            icon={MessageCircle}
+            title="Telegram"
+            value={sourceStats.telegram}
+            description="grupos/usuários"
+            icon={Database}
+          />
+          <StatCard
+            title="Com Telefone"
+            value={mobileLeadsCount}
+            description="válidos"
+            icon={Phone}
             variant="accent"
           />
           <StatCard
-            title="Enviadas Esta Semana"
-            value={stats.messagesThisWeek}
-            description="últimos 7 dias"
-            icon={CheckCircle2}
+            title="Automação"
+            value={queueStats.sent}
+            description={`${queueStats.pending} pendentes`}
+            icon={Workflow}
           />
           <StatCard
-            title="Taxa de Contato"
-            value={mobileLeadsCount > 0 ? `${Math.round((stats.messagesSent / mobileLeadsCount) * 100)}%` : "0%"}
-            description="leads contatados"
+            title="Taxa Sucesso"
+            value={queueStats.sent + queueStats.error > 0 
+              ? `${Math.round((queueStats.sent / (queueStats.sent + queueStats.error)) * 100)}%` 
+              : "—"}
+            description="webhook N8N"
             icon={TrendingUp}
           />
         </div>
