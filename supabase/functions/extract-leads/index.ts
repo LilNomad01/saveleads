@@ -14,7 +14,7 @@ interface ExtractRequest {
   apiProvider?: 'apify' | 'mock';
   maxResults?: number;
   userId?: string;
-  source?: 'google_maps' | 'telegram' | 'google_reviews';
+  source?: 'google_maps' | 'telegram' | 'google_reviews' | 'linkedin';
   searchType?: string;
 }
 
@@ -147,9 +147,34 @@ serve(async (req) => {
           mensagem: `✅ ${leadsCount} reviews negativos extraídos (demo)`
         });
 
+      } else if (source === 'linkedin') {
+        // Mock LinkedIn data
+        const linkedinLeads = [];
+        for (let i = 0; i < mockCount; i++) {
+          linkedinLeads.push({
+            nome: `${['João', 'Maria', 'Pedro', 'Ana', 'Carlos'][i % 5]} ${['Silva', 'Santos', 'Oliveira', 'Souza', 'Lima'][i % 5]}`,
+            cargo: `${keyword} ${['Senior', 'Junior', 'Pleno', 'Head', 'Director'][i % 5]}`,
+            empresa: `Empresa ${i + 1} Ltda`,
+            localizacao: location || 'São Paulo, Brasil',
+            perfil_url: `https://linkedin.com/in/user${i + 1}`,
+            setor: keyword,
+            conexoes: Math.floor(100 + Math.random() * 5000),
+            descricao: `Profissional de ${keyword} com experiência em diversos projetos.`,
+            fonte: 'linkedin',
+            user_id: userId || null,
+          });
+        }
+
+        const { error: insertError } = await supabase.from('linkedin_leads').insert(linkedinLeads);
+        if (insertError) throw insertError;
+        leadsCount = linkedinLeads.length;
+
+        await supabase.from('extraction_logs').insert({
+          session_id: sessionId, tipo: 'success',
+          mensagem: `✅ ${leadsCount} perfis do LinkedIn extraídos (demo)`
+        });
+
       } else {
-        // Mock Google Maps data
-        const leads = [];
         const suffixes = ['Central', 'Express', 'Premium', '& Cia', 'do Bairro', 'Família', 'Tradicional', 'Gourmet', '24h', 'VIP'];
 
         for (let i = 0; i < mockCount; i++) {
@@ -256,6 +281,84 @@ serve(async (req) => {
           if (insertError) throw insertError;
         }
         leadsCount = telegramLeads.length;
+
+      } else if (source === 'linkedin') {
+        // LinkedIn scraper via Apify
+        await supabase.from('extraction_logs').insert({
+          session_id: sessionId, tipo: 'info',
+          mensagem: '🔗 Conectando ao LinkedIn Scraper (Apify)...'
+        });
+
+        const actorId = searchType === 'empresas_linkedin' 
+          ? 'curious_coder~linkedin-company-scraper'
+          : 'curious_coder~linkedin-profile-scraper';
+
+        const inputBody = searchType === 'empresas_linkedin'
+          ? { searchUrls: [`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(keyword)}`], maxResults: maxResults || 100 }
+          : { searchUrls: [`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keyword)}`], maxResults: maxResults || 100 };
+
+        const runResponse = await fetch(
+          `https://api.apify.com/v2/acts/${actorId}/runs?token=${apifyKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(inputBody)
+          }
+        );
+
+        if (!runResponse.ok) {
+          const errText = await runResponse.text();
+          throw new Error(`Apify LinkedIn falhou: ${runResponse.status} - ${errText}`);
+        }
+
+        const runData = await runResponse.json();
+        const runId = runData.data?.id;
+        if (!runId) throw new Error('Sem ID de execução Apify');
+
+        let attempts = 0;
+        let runStatus = 'RUNNING';
+        while (runStatus === 'RUNNING' && attempts < 120) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`);
+          const statusData = await statusRes.json();
+          runStatus = statusData.data?.status;
+          attempts++;
+          if (attempts % 12 === 0) {
+            await supabase.from('extraction_logs').insert({
+              session_id: sessionId, tipo: 'info',
+              mensagem: `⏳ LinkedIn processando... (${Math.floor(attempts * 5 / 60)}min)`
+            });
+          }
+        }
+
+        if (runStatus !== 'SUCCEEDED') throw new Error(`LinkedIn scraper status: ${runStatus}`);
+
+        const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`);
+        const results = await dataRes.json();
+
+        const linkedinLeads = results.map((item: any) => ({
+          nome: item.fullName || item.name || item.title || '',
+          cargo: item.headline || item.title || item.position || '',
+          empresa: item.company || item.companyName || item.organization || '',
+          localizacao: item.location || item.addressLocality || location || '',
+          perfil_url: item.url || item.profileUrl || item.linkedInUrl || '',
+          email: item.email || '',
+          telefone: item.phone || '',
+          setor: item.industry || item.sector || keyword,
+          conexoes: item.connectionsCount || item.connections || null,
+          descricao: item.summary || item.about || item.description || '',
+          fonte: 'linkedin',
+          user_id: userId || null,
+        }));
+
+        if (linkedinLeads.length > 0) {
+          for (let i = 0; i < linkedinLeads.length; i += 500) {
+            const batch = linkedinLeads.slice(i, i + 500);
+            const { error: insertError } = await supabase.from('linkedin_leads').insert(batch);
+            if (insertError) throw insertError;
+          }
+        }
+        leadsCount = linkedinLeads.length;
 
       } else if (source === 'google_reviews') {
         // Google Reviews scraper

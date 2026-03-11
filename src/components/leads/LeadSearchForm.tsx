@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 
-export type DataSource = 'google_maps' | 'telegram' | 'google_reviews';
-export type SearchType = 'empresas' | 'grupos' | 'reviews_negativas' | 'usuarios';
+export type DataSource = 'google_maps' | 'telegram' | 'google_reviews' | 'linkedin';
+export type SearchType = 'empresas' | 'grupos' | 'reviews_negativas' | 'usuarios' | 'perfis' | 'empresas_linkedin';
 
 const sourceConfig: Record<DataSource, { label: string; emoji: string; searchTypes: { value: SearchType; label: string }[] }> = {
   google_maps: {
@@ -37,6 +37,14 @@ const sourceConfig: Record<DataSource, { label: string; emoji: string; searchTyp
     searchTypes: [
       { value: 'reviews_negativas', label: 'Reviews Negativas (≤2★)' },
       { value: 'empresas', label: 'Empresas' },
+    ]
+  },
+  linkedin: {
+    label: 'LinkedIn',
+    emoji: '💼',
+    searchTypes: [
+      { value: 'perfis', label: 'Perfis / Pessoas' },
+      { value: 'empresas_linkedin', label: 'Empresas' },
     ]
   }
 };
@@ -62,7 +70,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
   const [apiProvider, setApiProvider] = useState<'apify' | 'mock'>('apify');
 
   const currentConfig = sourceConfig[source];
-  const showLocation = source !== 'telegram';
+  const showLocation = source !== 'telegram' && source !== 'linkedin';
 
   const handleSourceChange = (newSource: DataSource) => {
     setSource(newSource);
@@ -106,6 +114,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
               <SelectItem value="google_maps">🗺️ Google Maps</SelectItem>
               <SelectItem value="telegram">✈️ Telegram</SelectItem>
               <SelectItem value="google_reviews">⭐ Google Reviews</SelectItem>
+              <SelectItem value="linkedin">💼 LinkedIn</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -132,7 +141,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               id="query"
-              placeholder={source === 'telegram' ? 'Ex: Marketing Digital' : 'Ex: Clínica estética'}
+              placeholder={source === 'telegram' ? 'Ex: Marketing Digital' : source === 'linkedin' ? 'Ex: CEO, Marketing Manager' : 'Ex: Clínica estética'}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="pl-10"
@@ -153,7 +162,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               className="pl-10"
-              disabled={source === 'telegram'}
+              disabled={source === 'telegram' || source === 'linkedin'}
             />
           </div>
         </div>

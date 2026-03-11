@@ -60,7 +60,7 @@ export default function LeadExtractor() {
               Extração de Dados
             </h1>
             <p className="text-sm sm:text-base text-muted-foreground">
-              Extraia leads de múltiplas fontes: Google Maps, Telegram, Reviews
+              Extraia leads de múltiplas fontes: Google Maps, Telegram, Reviews, LinkedIn
             </p>
           </div>
           {isExtracting && (
