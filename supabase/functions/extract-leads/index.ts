@@ -202,13 +202,14 @@ serve(async (req) => {
         });
 
         const runResponse = await fetch(
-          `https://api.apify.com/v2/acts/danek~telegram-scraper/runs?token=${apifyKey}`,
+          `https://api.apify.com/v2/acts/dainty_screw~telegram-scraper/runs?token=${apifyKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              searchQueries: [keyword],
-              maxResults: maxResults || 100,
+              channels: [keyword.replace(/\s+/g, '').toLowerCase()],
+              maxPostsPerChannel: maxResults || 100,
+              maxCommentsPerPost: 0,
             })
           }
         );
