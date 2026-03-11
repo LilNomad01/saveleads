@@ -147,9 +147,34 @@ serve(async (req) => {
           mensagem: `✅ ${leadsCount} reviews negativos extraídos (demo)`
         });
 
+      } else if (source === 'linkedin') {
+        // Mock LinkedIn data
+        const linkedinLeads = [];
+        for (let i = 0; i < mockCount; i++) {
+          linkedinLeads.push({
+            nome: `${['João', 'Maria', 'Pedro', 'Ana', 'Carlos'][i % 5]} ${['Silva', 'Santos', 'Oliveira', 'Souza', 'Lima'][i % 5]}`,
+            cargo: `${keyword} ${['Senior', 'Junior', 'Pleno', 'Head', 'Director'][i % 5]}`,
+            empresa: `Empresa ${i + 1} Ltda`,
+            localizacao: location || 'São Paulo, Brasil',
+            perfil_url: `https://linkedin.com/in/user${i + 1}`,
+            setor: keyword,
+            conexoes: Math.floor(100 + Math.random() * 5000),
+            descricao: `Profissional de ${keyword} com experiência em diversos projetos.`,
+            fonte: 'linkedin',
+            user_id: userId || null,
+          });
+        }
+
+        const { error: insertError } = await supabase.from('linkedin_leads').insert(linkedinLeads);
+        if (insertError) throw insertError;
+        leadsCount = linkedinLeads.length;
+
+        await supabase.from('extraction_logs').insert({
+          session_id: sessionId, tipo: 'success',
+          mensagem: `✅ ${leadsCount} perfis do LinkedIn extraídos (demo)`
+        });
+
       } else {
-        // Mock Google Maps data
-        const leads = [];
         const suffixes = ['Central', 'Express', 'Premium', '& Cia', 'do Bairro', 'Família', 'Tradicional', 'Gourmet', '24h', 'VIP'];
 
         for (let i = 0; i < mockCount; i++) {
