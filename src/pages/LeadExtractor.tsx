@@ -2,19 +2,29 @@ import { useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { LeadSearchForm, DataSource, SearchType } from "@/components/leads/LeadSearchForm";
 import { LeadsTableReal } from "@/components/leads/LeadsTableReal";
+import { TelegramLeadsTable } from "@/components/leads/TelegramLeadsTable";
+import { LinkedinLeadsTable } from "@/components/leads/LinkedinLeadsTable";
+import { ReviewsLeadsTable } from "@/components/leads/ReviewsLeadsTable";
 import { ExtractionConsole } from "@/components/leads/ExtractionConsole";
 import { StatCard } from "@/components/ui/stat-card";
-import { Database, Building2, CheckCircle2, Phone, Star } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Database, Building2, CheckCircle2, Phone, Star, MessageCircle, Briefcase } from "lucide-react";
 import { useLeads } from "@/hooks/useLeads";
+import { useTelegramLeads } from "@/hooks/useTelegramLeads";
+import { useLinkedinLeads } from "@/hooks/useLinkedinLeads";
+import { useReviewsLeads } from "@/hooks/useReviewsLeads";
 import { useLeadExtraction } from "@/hooks/useLeadExtraction";
 import { useExtractionLogs } from "@/hooks/useExtractionLogs";
 import { Badge } from "@/components/ui/badge";
 
 export default function LeadExtractor() {
   const { leads, isLoading: isLoadingLeads, deleteLeads, extractPhoneNumbers } = useLeads();
+  const { leads: telegramLeads, isLoading: isLoadingTelegram, deleteLeads: deleteTelegramLeads } = useTelegramLeads();
+  const { leads: linkedinLeads, isLoading: isLoadingLinkedin, deleteLeads: deleteLinkedinLeads } = useLinkedinLeads();
+  const { leads: reviewsLeads, isLoading: isLoadingReviews, deleteLeads: deleteReviewsLeads } = useReviewsLeads();
   const { isExtracting, sessionId, startExtraction } = useLeadExtraction();
   const { logs } = useExtractionLogs(sessionId);
-  const [sessionLeadsCount, setSessionLeadsCount] = useState(0);
+  const [activeTab, setActiveTab] = useState<string>("google_maps");
 
   const handleSearch = async (params: {
     source: DataSource;
@@ -24,7 +34,9 @@ export default function LeadExtractor() {
     maxResults: number;
     apiProvider: 'apify' | 'mock';
   }) => {
-    const previousCount = leads.length;
+    // Switch to the tab of the source being extracted
+    setActiveTab(params.source);
+    
     await startExtraction(
       params.query,
       params.location,
@@ -33,21 +45,9 @@ export default function LeadExtractor() {
       params.source,
       params.searchType
     );
-    setTimeout(() => {
-      setSessionLeadsCount(leads.length - previousCount);
-    }, 2000);
   };
 
-  const totalLeads = leads.length;
-  const leadsWithPhone = leads.filter((l) => l.whatsapp_numero).length;
-  const validatedLeads = leads.filter((l) => l.status === 'validado').length;
-
-  // Leads by source
-  const sourceBreakdown = {
-    google_maps: leads.filter(l => l.fonte === 'google_maps' || l.fonte === 'apify').length,
-    telegram: leads.filter(l => l.fonte === 'telegram').length,
-    reviews: leads.filter(l => l.fonte === 'google_reviews').length,
-  };
+  const totalLeads = leads.length + telegramLeads.length + linkedinLeads.length + reviewsLeads.length;
 
   return (
     <DashboardLayout>
@@ -73,40 +73,11 @@ export default function LeadExtractor() {
 
         {/* Stats */}
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard
-            title="Total de Leads"
-            value={totalLeads}
-            description="todas as fontes"
-            icon={Database}
-            variant="navy"
-          />
-          <StatCard
-            title="Com Telefone"
-            value={leadsWithPhone}
-            description="números válidos"
-            icon={Phone}
-            trend={totalLeads > 0 ? { value: Math.round((leadsWithPhone / totalLeads) * 100), isPositive: true } : undefined}
-            variant="accent"
-          />
-          <StatCard
-            title="Validados"
-            value={validatedLeads}
-            description="prontos"
-            icon={CheckCircle2}
-          />
-          <StatCard
-            title="Google Maps"
-            value={sourceBreakdown.google_maps}
-            description="leads extraídos"
-            icon={Building2}
-          />
-          <StatCard
-            title="Nesta Sessão"
-            value={sessionLeadsCount}
-            description="extraídos agora"
-            icon={Star}
-            variant="success"
-          />
+          <StatCard title="Total de Leads" value={totalLeads} description="todas as fontes" icon={Database} variant="navy" />
+          <StatCard title="Google Maps" value={leads.length} description="empresas" icon={Building2} />
+          <StatCard title="Telegram" value={telegramLeads.length} description="grupos/usuários" icon={MessageCircle} variant="accent" />
+          <StatCard title="LinkedIn" value={linkedinLeads.length} description="perfis/empresas" icon={Briefcase} />
+          <StatCard title="Reviews" value={reviewsLeads.length} description="reviews negativos" icon={Star} variant="success" />
         </div>
 
         {/* Search Form */}
@@ -115,13 +86,60 @@ export default function LeadExtractor() {
         {/* Extraction Console */}
         <ExtractionConsole logs={logs} isExtracting={isExtracting} />
 
-        {/* Results Table */}
-        <LeadsTableReal 
-          leads={leads} 
-          isLoading={isLoadingLeads} 
-          onDelete={deleteLeads}
-          onExtractPhones={extractPhoneNumbers}
-        />
+        {/* Results with Tabs per source */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="google_maps" className="gap-1">
+              🗺️ <span className="hidden sm:inline">Google Maps</span>
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{leads.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="telegram" className="gap-1">
+              ✈️ <span className="hidden sm:inline">Telegram</span>
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{telegramLeads.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="linkedin" className="gap-1">
+              💼 <span className="hidden sm:inline">LinkedIn</span>
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{linkedinLeads.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="google_reviews" className="gap-1">
+              ⭐ <span className="hidden sm:inline">Reviews</span>
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{reviewsLeads.length}</Badge>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="google_maps">
+            <LeadsTableReal 
+              leads={leads} 
+              isLoading={isLoadingLeads} 
+              onDelete={deleteLeads}
+              onExtractPhones={extractPhoneNumbers}
+            />
+          </TabsContent>
+
+          <TabsContent value="telegram">
+            <TelegramLeadsTable
+              leads={telegramLeads}
+              isLoading={isLoadingTelegram}
+              onDelete={deleteTelegramLeads}
+            />
+          </TabsContent>
+
+          <TabsContent value="linkedin">
+            <LinkedinLeadsTable
+              leads={linkedinLeads}
+              isLoading={isLoadingLinkedin}
+              onDelete={deleteLinkedinLeads}
+            />
+          </TabsContent>
+
+          <TabsContent value="google_reviews">
+            <ReviewsLeadsTable
+              leads={reviewsLeads}
+              isLoading={isLoadingReviews}
+              onDelete={deleteReviewsLeads}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );
