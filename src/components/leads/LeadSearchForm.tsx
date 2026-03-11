@@ -114,6 +114,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
               <SelectItem value="google_maps">🗺️ Google Maps</SelectItem>
               <SelectItem value="telegram">✈️ Telegram</SelectItem>
               <SelectItem value="google_reviews">⭐ Google Reviews</SelectItem>
+              <SelectItem value="linkedin">💼 LinkedIn</SelectItem>
             </SelectContent>
           </Select>
         </div>
