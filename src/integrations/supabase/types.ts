@@ -191,6 +191,60 @@ export type Database = {
         }
         Relationships: []
       }
+      linkedin_leads: {
+        Row: {
+          cargo: string | null
+          conexoes: number | null
+          created_at: string
+          data_extracao: string
+          descricao: string | null
+          email: string | null
+          empresa: string | null
+          fonte: string | null
+          id: string
+          localizacao: string | null
+          nome: string
+          perfil_url: string | null
+          setor: string | null
+          telefone: string | null
+          user_id: string | null
+        }
+        Insert: {
+          cargo?: string | null
+          conexoes?: number | null
+          created_at?: string
+          data_extracao?: string
+          descricao?: string | null
+          email?: string | null
+          empresa?: string | null
+          fonte?: string | null
+          id?: string
+          localizacao?: string | null
+          nome: string
+          perfil_url?: string | null
+          setor?: string | null
+          telefone?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          cargo?: string | null
+          conexoes?: number | null
+          created_at?: string
+          data_extracao?: string
+          descricao?: string | null
+          email?: string | null
+          empresa?: string | null
+          fonte?: string | null
+          id?: string
+          localizacao?: string | null
+          nome?: string
+          perfil_url?: string | null
+          setor?: string | null
+          telefone?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           apify_api_token: string | null
