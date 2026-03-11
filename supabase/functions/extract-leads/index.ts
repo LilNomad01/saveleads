@@ -202,13 +202,14 @@ serve(async (req) => {
         });
 
         const runResponse = await fetch(
-          `https://api.apify.com/v2/acts/danek~telegram-scraper/runs?token=${apifyKey}`,
+          `https://api.apify.com/v2/acts/dainty_screw~telegram-scraper/runs?token=${apifyKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              searchQueries: [keyword],
-              maxResults: maxResults || 100,
+              channels: [keyword.replace(/\s+/g, '').toLowerCase()],
+              maxPostsPerChannel: maxResults || 100,
+              maxCommentsPerPost: 0,
             })
           }
         );
@@ -239,11 +240,11 @@ serve(async (req) => {
         const results = await dataRes.json();
 
         const telegramLeads = results.map((item: any) => ({
-          nome: item.title || item.name || keyword,
-          username: item.username || '',
-          link: item.link || item.url || '',
-          membros: item.membersCount || item.members || 0,
-          descricao: item.description || item.about || '',
+          nome: item.channelTitle || item.title || item.authorName || keyword,
+          username: item.channelUsername || item.username || '',
+          link: item.url || item.authorTelegram || '',
+          membros: item.viewsCount || item.views || 0,
+          descricao: item.text?.substring(0, 500) || item.description || '',
           categoria: keyword,
           fonte: 'telegram',
           tipo: searchType === 'usuarios' ? 'usuario' : 'grupo',
