@@ -268,15 +268,6 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                   <Smartphone className="h-3 w-3" />
                   Móveis
                 </Button>
-                <Button 
-                  variant="default" 
-                  size="sm" 
-                  onClick={() => navigate('/whatsapp-export')}
-                  className="bg-green-600 hover:bg-green-700 flex-1 text-xs"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  WhatsApp
-                </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button 
@@ -340,15 +331,6 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                 >
                   <FileSpreadsheet className="h-4 w-4" />
                   Exportar XLSX
-                </Button>
-                <Button 
-                  variant="default" 
-                  size="sm" 
-                  onClick={() => navigate('/whatsapp-export')}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Abrir WhatsApp
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
