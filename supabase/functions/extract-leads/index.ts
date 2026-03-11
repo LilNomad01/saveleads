@@ -14,7 +14,7 @@ interface ExtractRequest {
   apiProvider?: 'apify' | 'mock';
   maxResults?: number;
   userId?: string;
-  source?: 'google_maps' | 'telegram' | 'google_reviews';
+  source?: 'google_maps' | 'telegram' | 'google_reviews' | 'linkedin';
   searchType?: string;
 }
 
