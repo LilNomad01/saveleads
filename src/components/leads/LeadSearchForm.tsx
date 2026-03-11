@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 
-export type DataSource = 'google_maps' | 'telegram' | 'google_reviews';
-export type SearchType = 'empresas' | 'grupos' | 'reviews_negativas' | 'usuarios';
+export type DataSource = 'google_maps' | 'telegram' | 'google_reviews' | 'linkedin';
+export type SearchType = 'empresas' | 'grupos' | 'reviews_negativas' | 'usuarios' | 'perfis' | 'empresas_linkedin';
 
 const sourceConfig: Record<DataSource, { label: string; emoji: string; searchTypes: { value: SearchType; label: string }[] }> = {
   google_maps: {
@@ -37,6 +37,14 @@ const sourceConfig: Record<DataSource, { label: string; emoji: string; searchTyp
     searchTypes: [
       { value: 'reviews_negativas', label: 'Reviews Negativas (≤2★)' },
       { value: 'empresas', label: 'Empresas' },
+    ]
+  },
+  linkedin: {
+    label: 'LinkedIn',
+    emoji: '💼',
+    searchTypes: [
+      { value: 'perfis', label: 'Perfis / Pessoas' },
+      { value: 'empresas_linkedin', label: 'Empresas' },
     ]
   }
 };
