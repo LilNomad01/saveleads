@@ -141,7 +141,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               id="query"
-              placeholder={source === 'telegram' ? 'Ex: Marketing Digital' : 'Ex: Clínica estética'}
+              placeholder={source === 'telegram' ? 'Ex: Marketing Digital' : source === 'linkedin' ? 'Ex: CEO, Marketing Manager' : 'Ex: Clínica estética'}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="pl-10"
