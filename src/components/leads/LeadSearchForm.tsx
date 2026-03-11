@@ -162,7 +162,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               className="pl-10"
-              disabled={source === 'telegram'}
+              disabled={source === 'telegram' || source === 'linkedin'}
             />
           </div>
         </div>
