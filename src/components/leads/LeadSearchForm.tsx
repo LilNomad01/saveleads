@@ -70,7 +70,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
   const [apiProvider, setApiProvider] = useState<'apify' | 'mock'>('apify');
 
   const currentConfig = sourceConfig[source];
-  const showLocation = source !== 'telegram';
+  const showLocation = source !== 'telegram' && source !== 'linkedin';
 
   const handleSourceChange = (newSource: DataSource) => {
     setSource(newSource);
