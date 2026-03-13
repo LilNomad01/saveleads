@@ -34,19 +34,33 @@ export function useLeadExtraction() {
         }
       });
 
-      if (error) throw error;
+      // supabase.functions.invoke throws FunctionsHttpError for non-2xx
+      // But since we now return 200 always, error should be null
+      if (error) {
+        // Try to parse the error body for a real message
+        const errorBody = typeof error === 'object' && 'context' in error
+          ? await (error as any).context?.json?.().catch(() => null)
+          : null;
+        const msg = errorBody?.error || error.message || 'Erro desconhecido na Edge Function';
+        toast.error(msg);
+        return { success: false, error: msg };
+      }
 
-      if (data.success) {
+      if (data?.success) {
         toast.success(`Extração concluída! ${data.leadsCount} resultados encontrados.`);
       } else {
-        toast.error('Erro na extração: ' + data.error);
+        // Edge function returned 200 but success: false
+        const errorMsg = data?.error || 'Erro desconhecido na extração';
+        const details = data?.details ? ` (${data.details})` : '';
+        toast.error(errorMsg + details);
       }
 
       return data;
     } catch (err: any) {
       console.error('Extraction error:', err);
-      toast.error('Erro ao iniciar extração: ' + err.message);
-      throw err;
+      const msg = err?.message || 'Erro ao iniciar extração';
+      toast.error(msg);
+      return { success: false, error: msg };
     } finally {
       setIsExtracting(false);
     }
