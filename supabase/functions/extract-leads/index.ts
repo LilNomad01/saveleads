@@ -62,14 +62,20 @@ serve(async (req) => {
 
     console.log(`[extract-leads] Source: ${source}, Type: ${searchType}, Query: ${keyword}, Location: ${location}`);
 
+    // Fetch user's Apify token from profile (persisted permanently)
     let userApifyToken: string | null = null;
     if (userId && apiProvider === 'apify') {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('apify_api_token')
         .eq('user_id', userId)
         .single();
+      
+      if (profileError) {
+        console.log(`[extract-leads] Profile fetch error: ${profileError.message}`);
+      }
       userApifyToken = profile?.apify_api_token || null;
+      console.log(`[extract-leads] User token found: ${!!userApifyToken}`);
     }
 
     await supabase.from('extraction_logs').insert({
