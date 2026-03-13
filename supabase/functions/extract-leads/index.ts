@@ -2,21 +2,132 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// =================== HELPERS ===================
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-interface ExtractRequest {
-  keyword: string;
-  location: string;
-  sessionId: string;
-  apiProvider?: 'apify' | 'mock';
-  maxResults?: number;
-  userId?: string;
-  source?: 'google_maps' | 'telegram' | 'google_reviews' | 'linkedin';
-  searchType?: string;
+function successResponse(data: Record<string, unknown>) {
+  return new Response(JSON.stringify({ success: true, ...data }), {
+    status: 200,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 }
+
+function errorResponse(error: string, details: string = '', status = 200) {
+  // Always return 200 so supabase.functions.invoke passes the body through
+  // The `success: false` flag tells the frontend it failed
+  console.error(`[extract-leads] Error: ${error} | Details: ${details}`);
+  return new Response(JSON.stringify({ success: false, error, details }), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+async function validateApifyToken(token: string): Promise<{ valid: boolean; username?: string; error?: string }> {
+  try {
+    const res = await fetch(`https://api.apify.com/v2/users/me?token=${token}`);
+    if (res.ok) {
+      const data = await res.json();
+      return { valid: true, username: data.data?.username || 'OK' };
+    }
+    const body = await res.text();
+    return { valid: false, error: `Status ${res.status}: ${body.substring(0, 200)}` };
+  } catch (e: any) {
+    return { valid: false, error: `Conexão falhou: ${e.message}` };
+  }
+}
+
+async function runApifyActor(
+  actorId: string,
+  input: Record<string, unknown>,
+  apifyKey: string,
+  supabase: any,
+  sessionId: string,
+  label: string,
+  maxPollAttempts = 120,
+): Promise<any[]> {
+  const url = `https://api.apify.com/v2/acts/${actorId}/runs?token=${apifyKey}`;
+  console.log(`[extract-leads] Starting actor: ${actorId}`);
+  console.log(`[extract-leads] Actor input: ${JSON.stringify(input)}`);
+
+  const runResponse = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+
+  const runBody = await runResponse.text();
+  console.log(`[extract-leads] Actor start response: ${runResponse.status} - ${runBody.substring(0, 500)}`);
+
+  if (!runResponse.ok) {
+    const parsed = tryParseJSON(runBody);
+    const msg = parsed?.error?.message || runBody.substring(0, 300);
+    if (runResponse.status === 402) {
+      throw new Error(`Créditos Apify insuficientes para ${label}. Recarregue seus créditos em console.apify.com.`);
+    }
+    if (runResponse.status === 403) {
+      throw new Error(`Actor "${actorId}" não disponível. Você precisa alugar este actor no Apify. Detalhes: ${msg}`);
+    }
+    throw new Error(`Falha ao iniciar ${label}: HTTP ${runResponse.status} - ${msg}`);
+  }
+
+  const runData = tryParseJSON(runBody);
+  const runId = runData?.data?.id;
+  if (!runId) throw new Error(`Resposta inválida do Apify ao iniciar ${label}: sem ID de execução`);
+
+  await supabase.from('extraction_logs').insert({
+    session_id: sessionId, tipo: 'info',
+    mensagem: `⏳ ${label} iniciado (ID: ${runId}). Aguardando...`
+  });
+
+  // Poll for completion
+  let attempts = 0;
+  let runStatus = 'RUNNING';
+  while ((runStatus === 'RUNNING' || runStatus === 'READY') && attempts < maxPollAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`);
+    const statusBody = await statusRes.text();
+    const statusData = tryParseJSON(statusBody);
+    runStatus = statusData?.data?.status || 'UNKNOWN';
+    attempts++;
+    if (attempts % 12 === 0) {
+      await supabase.from('extraction_logs').insert({
+        session_id: sessionId, tipo: 'info',
+        mensagem: `⏳ ${label} processando... (${Math.floor(attempts * 5 / 60)}min)`
+      });
+    }
+  }
+
+  if (runStatus !== 'SUCCEEDED') {
+    throw new Error(`${label} finalizou com status: ${runStatus}. Verifique os logs no Apify.`);
+  }
+
+  const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`);
+  if (!dataRes.ok) {
+    const errBody = await dataRes.text();
+    throw new Error(`Falha ao buscar resultados do ${label}: HTTP ${dataRes.status} - ${errBody.substring(0, 200)}`);
+  }
+  const results = await dataRes.json();
+  console.log(`[extract-leads] ${label} returned ${Array.isArray(results) ? results.length : 0} items`);
+  return Array.isArray(results) ? results : [];
+}
+
+function tryParseJSON(text: string): any {
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+async function logToSession(supabase: any, sessionId: string, tipo: string, mensagem: string, dados?: Record<string, any>) {
+  try {
+    await supabase.from('extraction_logs').insert({ session_id: sessionId, tipo, mensagem, ...(dados ? { dados } : {}) });
+  } catch (e) {
+    console.error(`[extract-leads] Failed to log: ${e}`);
+  }
+}
+
+// =================== UTILITIES ===================
 
 function sanitizePhoneNumber(phone: string, ddd: string = '11'): string {
   if (!phone) return '';
@@ -48,58 +159,71 @@ function extractDDD(location: string): string {
   return '11';
 }
 
+// =================== MAIN ===================
+
+interface ExtractRequest {
+  keyword: string;
+  location: string;
+  sessionId: string;
+  apiProvider?: 'apify' | 'mock';
+  maxResults?: number;
+  userId?: string;
+  source?: 'google_maps' | 'telegram' | 'google_reviews' | 'linkedin';
+  searchType?: string;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let sessionId = '';
+
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    // 1. Validate env vars
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseUrl || !supabaseKey) {
+      return errorResponse('Configuração do servidor incompleta', 'SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY ausente');
+    }
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { keyword, location, sessionId, apiProvider = 'mock', maxResults = 100, userId, source = 'google_maps', searchType = 'empresas' }: ExtractRequest = await req.json();
-
-    console.log(`[extract-leads] Source: ${source}, Type: ${searchType}, Query: ${keyword}, Location: ${location}`);
-
-    // Fetch user's Apify token from profile (persisted permanently)
-    let userApifyToken: string | null = null;
-    if (userId && apiProvider === 'apify') {
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('apify_api_token')
-        .eq('user_id', userId)
-        .single();
-      
-      if (profileError) {
-        console.log(`[extract-leads] Profile fetch error: ${profileError.message}`);
-      }
-      userApifyToken = profile?.apify_api_token || null;
-      console.log(`[extract-leads] User token found: ${!!userApifyToken}`);
+    // 2. Parse & validate payload
+    let payload: ExtractRequest;
+    try {
+      payload = await req.json();
+    } catch {
+      return errorResponse('Payload inválido', 'O body da requisição não é um JSON válido');
     }
 
-    await supabase.from('extraction_logs').insert({
-      session_id: sessionId,
-      tipo: 'info',
-      mensagem: `🔍 Iniciando extração: "${keyword}" | Fonte: ${source} | Tipo: ${searchType}`
-    });
+    const { keyword, location = '', sessionId: sid, apiProvider = 'mock', maxResults = 100, userId, source = 'google_maps', searchType = 'empresas' } = payload;
+    sessionId = sid;
+
+    console.log(`[extract-leads] Payload: source=${source}, type=${searchType}, keyword="${keyword}", location="${location}", provider=${apiProvider}, max=${maxResults}`);
+
+    if (!keyword || !keyword.trim()) {
+      await logToSession(supabase, sessionId, 'error', '❌ Query/palavra-chave é obrigatória');
+      return errorResponse('Query vazia', 'O campo keyword é obrigatório');
+    }
+    if (!sessionId) {
+      return errorResponse('Session ID ausente', 'O campo sessionId é obrigatório');
+    }
+    if (maxResults < 1 || maxResults > 10000) {
+      return errorResponse('Limite inválido', `maxResults deve ser entre 1 e 10000, recebido: ${maxResults}`);
+    }
+
+    await logToSession(supabase, sessionId, 'info', `🔍 Iniciando extração: "${keyword}" | Fonte: ${source} | Tipo: ${searchType}`);
 
     const ddd = extractDDD(location);
     let leadsCount = 0;
 
     // =================== MOCK MODE ===================
     if (apiProvider === 'mock') {
-      await supabase.from('extraction_logs').insert({
-        session_id: sessionId, tipo: 'warning',
-        mensagem: '⚠️ Modo demonstração ativo.'
-      });
-
+      await logToSession(supabase, sessionId, 'warning', '⚠️ Modo demonstração ativo.');
       await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const mockCount = Math.min(maxResults || 100, 5000);
+      const mockCount = Math.min(maxResults || 100, 50);
 
       if (source === 'telegram') {
-        // Mock Telegram data
         const telegramLeads = [];
         for (let i = 0; i < mockCount; i++) {
           telegramLeads.push({
@@ -114,18 +238,12 @@ serve(async (req) => {
             user_id: userId || null,
           });
         }
-
         const { error: insertError } = await supabase.from('telegram_leads').insert(telegramLeads);
-        if (insertError) throw insertError;
+        if (insertError) throw new Error(`Erro ao salvar leads Telegram: ${insertError.message}`);
         leadsCount = telegramLeads.length;
-
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'success',
-          mensagem: `✅ ${leadsCount} ${searchType} do Telegram extraídos (demo)`
-        });
+        await logToSession(supabase, sessionId, 'success', `✅ ${leadsCount} ${searchType} do Telegram extraídos (demo)`);
 
       } else if (source === 'google_reviews' && searchType === 'reviews_negativas') {
-        // Mock Google Reviews data
         const reviewLeads = [];
         for (let i = 0; i < mockCount; i++) {
           reviewLeads.push({
@@ -136,25 +254,19 @@ serve(async (req) => {
             cidade: location,
             rating_medio: Number((1 + Math.random() * 1.5).toFixed(1)),
             total_reviews: Math.floor(5 + Math.random() * 200),
-            review: `Péssimo atendimento, não recomendo. Experiência terrível.`,
+            review: `Péssimo atendimento, não recomendo.`,
             rating: Math.floor(1 + Math.random() * 2),
             autor: `Usuário ${i + 1}`,
             data_review: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
             user_id: userId || null,
           });
         }
-
         const { error: insertError } = await supabase.from('reviews_negativos').insert(reviewLeads);
-        if (insertError) throw insertError;
+        if (insertError) throw new Error(`Erro ao salvar reviews: ${insertError.message}`);
         leadsCount = reviewLeads.length;
-
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'success',
-          mensagem: `✅ ${leadsCount} reviews negativos extraídos (demo)`
-        });
+        await logToSession(supabase, sessionId, 'success', `✅ ${leadsCount} reviews negativos extraídos (demo)`);
 
       } else if (source === 'linkedin') {
-        // Mock LinkedIn data
         const linkedinLeads = [];
         for (let i = 0; i < mockCount; i++) {
           linkedinLeads.push({
@@ -170,25 +282,20 @@ serve(async (req) => {
             user_id: userId || null,
           });
         }
-
         const { error: insertError } = await supabase.from('linkedin_leads').insert(linkedinLeads);
-        if (insertError) throw insertError;
+        if (insertError) throw new Error(`Erro ao salvar leads LinkedIn: ${insertError.message}`);
         leadsCount = linkedinLeads.length;
-
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'success',
-          mensagem: `✅ ${leadsCount} perfis do LinkedIn extraídos (demo)`
-        });
+        await logToSession(supabase, sessionId, 'success', `✅ ${leadsCount} perfis do LinkedIn extraídos (demo)`);
 
       } else {
+        // Google Maps mock
+        const leads = [];
         const suffixes = ['Central', 'Express', 'Premium', '& Cia', 'do Bairro', 'Família', 'Tradicional', 'Gourmet', '24h', 'VIP'];
-
         for (let i = 0; i < mockCount; i++) {
           const suffix = suffixes[i % suffixes.length];
           const businessName = `${keyword} ${suffix}${i >= suffixes.length ? ` ${i + 1}` : ''}`;
           const celular = `9${Math.floor(10000000 + Math.random() * 90000000)}`;
           const whatsappNumero = sanitizePhoneNumber(celular, ddd);
-
           leads.push({
             nome_empresa: businessName,
             telefone_original: `(${ddd}) ${celular.substring(0, 5)}-${celular.substring(5)}`,
@@ -203,103 +310,64 @@ serve(async (req) => {
             user_id: userId || null,
           });
         }
-
-        // Insert in batches of 500
         for (let i = 0; i < leads.length; i += 500) {
           const batch = leads.slice(i, i + 500);
           const { error: insertError } = await supabase.from('leads').insert(batch);
-          if (insertError) throw insertError;
+          if (insertError) throw new Error(`Erro ao salvar leads Google Maps: ${insertError.message}`);
         }
         leadsCount = leads.length;
-
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'success',
-          mensagem: `✅ ${leadsCount} leads do Google Maps extraídos (demo)`
-        });
+        await logToSession(supabase, sessionId, 'success', `✅ ${leadsCount} leads do Google Maps extraídos (demo)`);
       }
 
     // =================== APIFY MODE ===================
     } else if (apiProvider === 'apify') {
-      const apifyKey = userApifyToken || Deno.env.get('APIFY_API_KEY');
+      // Get token: user profile first, then env fallback
+      let apifyKey: string | null = null;
+      if (userId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('apify_api_token')
+          .eq('user_id', userId)
+          .single();
+        apifyKey = profile?.apify_api_token || null;
+        console.log(`[extract-leads] User token from profile: ${!!apifyKey}`);
+      }
       if (!apifyKey) {
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'error',
-          mensagem: '❌ Token Apify não configurado. Vá em Configurações e insira seu token.'
-        });
-        throw new Error('Token Apify não configurado. Configure em Configurações > API Token Apify.');
+        apifyKey = Deno.env.get('APIFY_API_KEY') || null;
+        console.log(`[extract-leads] Fallback to env APIFY_API_KEY: ${!!apifyKey}`);
       }
 
-      // Validate token before proceeding
+      if (!apifyKey) {
+        await logToSession(supabase, sessionId, 'error', '❌ Token Apify não configurado. Vá em Configurações e insira seu token.');
+        return errorResponse('Token Apify não configurado', 'Nenhum token encontrado no perfil do usuário nem nas variáveis de ambiente. Configure em Configurações > API Token Apify.');
+      }
+
+      // Validate token
       console.log(`[extract-leads] Validating Apify token...`);
-      const validateRes = await fetch(`https://api.apify.com/v2/users/me?token=${apifyKey}`);
-      if (!validateRes.ok) {
-        const errBody = await validateRes.text();
-        console.log(`[extract-leads] Token validation failed: ${validateRes.status} - ${errBody}`);
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'error',
-          mensagem: '❌ Token Apify inválido ou expirado. Atualize em Configurações.'
-        });
-        throw new Error('Token Apify inválido ou expirado. Atualize em Configurações.');
-      } else {
-        const userData = await validateRes.json();
-        console.log(`[extract-leads] Token valid for user: ${userData.data?.username || 'unknown'}`);
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'info',
-          mensagem: `🔑 Token Apify validado (${userData.data?.username || 'OK'})`
-        });
+      const tokenValidation = await validateApifyToken(apifyKey);
+      if (!tokenValidation.valid) {
+        console.error(`[extract-leads] Token validation failed: ${tokenValidation.error}`);
+        await logToSession(supabase, sessionId, 'error', `❌ Token Apify inválido ou expirado: ${tokenValidation.error}`);
+        return errorResponse('Token Apify inválido ou expirado', `Validação falhou: ${tokenValidation.error}. Atualize em Configurações.`);
       }
+      console.log(`[extract-leads] Token valid for user: ${tokenValidation.username}`);
+      await logToSession(supabase, sessionId, 'info', `🔑 Token Apify validado (${tokenValidation.username})`);
 
+      // ---- TELEGRAM ----
       if (source === 'telegram') {
-        // Apify Telegram scraper
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'info',
-          mensagem: '🔗 Conectando ao Telegram Scraper (Apify)...'
-        });
-
-        const runResponse = await fetch(
-          `https://api.apify.com/v2/acts/dainty_screw~telegram-scraper/runs?token=${apifyKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              channels: [keyword.replace(/\s+/g, '').toLowerCase()],
-              maxPostsPerChannel: maxResults || 100,
-              maxCommentsPerPost: 0,
-            })
-          }
+        await logToSession(supabase, sessionId, 'info', '🔗 Conectando ao Telegram Scraper (Apify)...');
+        const results = await runApifyActor(
+          'dainty_screw~telegram-scraper',
+          { channels: [keyword.replace(/\s+/g, '').toLowerCase()], maxPostsPerChannel: maxResults || 100, maxCommentsPerPost: 0 },
+          apifyKey, supabase, sessionId, 'Telegram Scraper', 60
         );
-
-        if (!runResponse.ok) {
-          const errText = await runResponse.text();
-          throw new Error(`Apify Telegram falhou: ${runResponse.status} - ${errText}`);
-        }
-
-        const runData = await runResponse.json();
-        const runId = runData.data?.id;
-        if (!runId) throw new Error('Sem ID de execução Apify');
-
-        // Poll for completion
-        let attempts = 0;
-        let runStatus = 'RUNNING';
-        while (runStatus === 'RUNNING' && attempts < 60) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`);
-          const statusData = await statusRes.json();
-          runStatus = statusData.data?.status;
-          attempts++;
-        }
-
-        if (runStatus !== 'SUCCEEDED') throw new Error(`Telegram scraper status: ${runStatus}`);
-
-        const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`);
-        const results = await dataRes.json();
 
         const telegramLeads = results.map((item: any) => ({
           nome: item.channelTitle || item.title || item.authorName || keyword,
           username: item.channelUsername || item.username || '',
           link: item.url || item.authorTelegram || '',
           membros: item.viewsCount || item.views || 0,
-          descricao: item.text?.substring(0, 500) || item.description || '',
+          descricao: (item.text || item.description || '').substring(0, 500),
           categoria: keyword,
           fonte: 'telegram',
           tipo: searchType === 'usuarios' ? 'usuario' : 'grupo',
@@ -307,64 +375,28 @@ serve(async (req) => {
         }));
 
         if (telegramLeads.length > 0) {
-          const { error: insertError } = await supabase.from('telegram_leads').insert(telegramLeads);
-          if (insertError) throw insertError;
+          for (let i = 0; i < telegramLeads.length; i += 500) {
+            const { error: insertError } = await supabase.from('telegram_leads').insert(telegramLeads.slice(i, i + 500));
+            if (insertError) throw new Error(`Erro ao salvar Telegram leads: ${insertError.message}`);
+          }
         }
         leadsCount = telegramLeads.length;
 
+      // ---- LINKEDIN ----
       } else if (source === 'linkedin') {
-        // LinkedIn scraper via Apify
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'info',
-          mensagem: '🔗 Conectando ao LinkedIn Scraper (Apify)...'
-        });
-
-        const actorId = searchType === 'empresas_linkedin' 
+        await logToSession(supabase, sessionId, 'info', '🔗 Conectando ao LinkedIn Scraper (Apify)...');
+        const actorId = searchType === 'empresas_linkedin'
           ? 'curious_coder~linkedin-company-scraper'
           : 'curious_coder~linkedin-profile-scraper';
+        const searchUrl = searchType === 'empresas_linkedin'
+          ? `https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(keyword)}`
+          : `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keyword)}`;
 
-        const inputBody = searchType === 'empresas_linkedin'
-          ? { searchUrls: [`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(keyword)}`], maxResults: maxResults || 100 }
-          : { searchUrls: [`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keyword)}`], maxResults: maxResults || 100 };
-
-        const runResponse = await fetch(
-          `https://api.apify.com/v2/acts/${actorId}/runs?token=${apifyKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(inputBody)
-          }
+        const results = await runApifyActor(
+          actorId,
+          { searchUrls: [searchUrl], maxResults: maxResults || 100 },
+          apifyKey, supabase, sessionId, 'LinkedIn Scraper', 120
         );
-
-        if (!runResponse.ok) {
-          const errText = await runResponse.text();
-          throw new Error(`Apify LinkedIn falhou: ${runResponse.status} - ${errText}`);
-        }
-
-        const runData = await runResponse.json();
-        const runId = runData.data?.id;
-        if (!runId) throw new Error('Sem ID de execução Apify');
-
-        let attempts = 0;
-        let runStatus = 'RUNNING';
-        while (runStatus === 'RUNNING' && attempts < 120) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`);
-          const statusData = await statusRes.json();
-          runStatus = statusData.data?.status;
-          attempts++;
-          if (attempts % 12 === 0) {
-            await supabase.from('extraction_logs').insert({
-              session_id: sessionId, tipo: 'info',
-              mensagem: `⏳ LinkedIn processando... (${Math.floor(attempts * 5 / 60)}min)`
-            });
-          }
-        }
-
-        if (runStatus !== 'SUCCEEDED') throw new Error(`LinkedIn scraper status: ${runStatus}`);
-
-        const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`);
-        const results = await dataRes.json();
 
         const linkedinLeads = results.map((item: any) => ({
           nome: item.fullName || item.name || item.title || '',
@@ -383,65 +415,35 @@ serve(async (req) => {
 
         if (linkedinLeads.length > 0) {
           for (let i = 0; i < linkedinLeads.length; i += 500) {
-            const batch = linkedinLeads.slice(i, i + 500);
-            const { error: insertError } = await supabase.from('linkedin_leads').insert(batch);
-            if (insertError) throw insertError;
+            const { error: insertError } = await supabase.from('linkedin_leads').insert(linkedinLeads.slice(i, i + 500));
+            if (insertError) throw new Error(`Erro ao salvar LinkedIn leads: ${insertError.message}`);
           }
         }
         leadsCount = linkedinLeads.length;
 
+      // ---- GOOGLE REVIEWS ----
       } else if (source === 'google_reviews') {
-        // Google Reviews scraper
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'info',
-          mensagem: '🔗 Conectando ao Google Reviews Scraper (Apify)...'
-        });
-
-        const runResponse = await fetch(
-          `https://api.apify.com/v2/acts/compass~crawler-google-places/runs?token=${apifyKey}`,
+        await logToSession(supabase, sessionId, 'info', '🔗 Conectando ao Google Reviews Scraper (Apify)...');
+        const results = await runApifyActor(
+          'compass~crawler-google-places',
           {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              searchStringsArray: [keyword],
-              locationQuery: location ? `${location}, Brasil` : 'Brasil',
-              maxCrawledPlacesPerSearch: maxResults || 100,
-              language: 'pt-BR',
-              deeperCityScrape: true,
-              skipClosedPlaces: true,
-              scrapeReviewsPersonalData: true,
-              reviewsSort: 'lowest_rating',
-              maxReviews: 5,
-            })
-          }
+            searchStringsArray: [keyword],
+            locationQuery: location ? `${location}, Brasil` : 'Brasil',
+            maxCrawledPlacesPerSearch: maxResults || 100,
+            language: 'pt-BR',
+            deeperCityScrape: true,
+            skipClosedPlaces: true,
+            scrapeReviewsPersonalData: true,
+            reviewsSort: 'lowest_rating',
+            maxReviews: 5,
+          },
+          apifyKey, supabase, sessionId, 'Google Reviews Scraper', 60
         );
-
-        if (!runResponse.ok) throw new Error(`Apify Reviews falhou: ${runResponse.status}`);
-
-        const runData = await runResponse.json();
-        const runId = runData.data?.id;
-        if (!runId) throw new Error('Sem ID de execução Apify');
-
-        let attempts = 0;
-        let runStatus = 'RUNNING';
-        while (runStatus === 'RUNNING' && attempts < 60) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`);
-          const statusData = await statusRes.json();
-          runStatus = statusData.data?.status;
-          attempts++;
-        }
-
-        if (runStatus !== 'SUCCEEDED') throw new Error(`Reviews scraper status: ${runStatus}`);
-
-        const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`);
-        const results = await dataRes.json();
 
         const reviewLeads: any[] = [];
         for (const place of results) {
           const negativeReviews = (place.reviews || []).filter((r: any) => (r.stars || r.rating || 5) <= 2);
           if (searchType === 'reviews_negativas' && negativeReviews.length === 0) continue;
-
           for (const review of (searchType === 'reviews_negativas' ? negativeReviews : [{ text: '', stars: place.totalScore }])) {
             reviewLeads.push({
               empresa: place.title || place.name,
@@ -462,148 +464,80 @@ serve(async (req) => {
 
         if (reviewLeads.length > 0) {
           for (let i = 0; i < reviewLeads.length; i += 500) {
-            const batch = reviewLeads.slice(i, i + 500);
-            const { error: insertError } = await supabase.from('reviews_negativos').insert(batch);
-            if (insertError) throw insertError;
+            const { error: insertError } = await supabase.from('reviews_negativos').insert(reviewLeads.slice(i, i + 500));
+            if (insertError) throw new Error(`Erro ao salvar reviews: ${insertError.message}`);
           }
         }
         leadsCount = reviewLeads.length;
 
+      // ---- GOOGLE MAPS (default) ----
       } else {
-        // Google Maps (default)
-        await supabase.from('extraction_logs').insert({
-          session_id: sessionId, tipo: 'info',
-          mensagem: '🔗 Conectando ao Google Maps Scraper (Apify)...'
-        });
-
-        const runResponse = await fetch(
-          `https://api.apify.com/v2/acts/compass~crawler-google-places/runs?token=${apifyKey}`,
+        await logToSession(supabase, sessionId, 'info', '🔗 Conectando ao Google Maps Scraper (Apify)...');
+        const results = await runApifyActor(
+          'compass~crawler-google-places',
           {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              searchStringsArray: [keyword],
-              locationQuery: location ? `${location}, Brasil` : 'Brasil',
-              maxCrawledPlacesPerSearch: maxResults || 100,
-              language: 'pt-BR',
-              deeperCityScrape: true,
-              skipClosedPlaces: true,
-            })
-          }
+            searchStringsArray: [keyword],
+            locationQuery: location ? `${location}, Brasil` : 'Brasil',
+            maxCrawledPlacesPerSearch: maxResults || 100,
+            language: 'pt-BR',
+            deeperCityScrape: true,
+            skipClosedPlaces: true,
+          },
+          apifyKey, supabase, sessionId, 'Google Maps Scraper', 120
         );
 
-        if (!runResponse.ok) {
-          const errText = await runResponse.text();
-          if (runResponse.status === 402) {
-            await supabase.from('extraction_logs').insert({
-              session_id: sessionId, tipo: 'warning',
-              mensagem: '⚠️ Créditos insuficientes. Usando modo demo...'
-            });
-            // Fallback to mock - insert a few leads
-            const leads = [];
-            for (let i = 0; i < 5; i++) {
-              const celular = `9${Math.floor(10000000 + Math.random() * 90000000)}`;
-              leads.push({
-                nome_empresa: `${keyword} Demo ${i + 1}`,
-                telefone_original: `(${ddd}) ${celular.substring(0,5)}-${celular.substring(5)}`,
-                whatsapp_numero: sanitizePhoneNumber(celular, ddd),
-                endereco: `${location} - Centro`,
-                categoria: keyword,
-                avaliacao: 4.0 + i * 0.1,
-                total_avaliacoes: 100 + i * 50,
-                status: 'validado',
-                fonte: 'mock_fallback',
-                user_id: userId || null,
-              });
-            }
-            await supabase.from('leads').insert(leads);
-            leadsCount = leads.length;
-          } else {
-            throw new Error(`Apify Maps falhou: ${runResponse.status}`);
-          }
-        } else {
-          const runData = await runResponse.json();
-          const runId = runData.data?.id;
-          if (!runId) throw new Error('Sem ID de execução');
+        const leads = results.map((place: any) => {
+          const phoneRaw = place.phone || place.phoneUnformatted || '';
+          const whatsappNumero = sanitizePhoneNumber(phoneRaw, ddd);
+          return {
+            nome_empresa: place.title || place.name || '',
+            telefone_original: phoneRaw,
+            whatsapp_numero: whatsappNumero,
+            site: place.website || place.url || '',
+            endereco: place.address || place.street || '',
+            categoria: place.categoryName || keyword,
+            avaliacao: place.totalScore || place.rating || null,
+            total_avaliacoes: place.reviewsCount || place.reviews || 0,
+            status: whatsappNumero ? 'validado' : 'extraido',
+            fonte: 'apify',
+            user_id: userId || null,
+          };
+        });
 
-          await supabase.from('extraction_logs').insert({
-            session_id: sessionId, tipo: 'info',
-            mensagem: `⏳ Extração iniciada (ID: ${runId}). Aguardando...`
-          });
-
-          let attempts = 0;
-          let runStatus = 'RUNNING';
-          while (runStatus === 'RUNNING' && attempts < 120) {
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`);
-            const statusData = await statusRes.json();
-            runStatus = statusData.data?.status;
-            attempts++;
-            if (attempts % 12 === 0) {
-              await supabase.from('extraction_logs').insert({
-                session_id: sessionId, tipo: 'info',
-                mensagem: `⏳ Processando... (${Math.floor(attempts * 5 / 60)}min)`
-              });
-            }
-          }
-
-          if (runStatus !== 'SUCCEEDED') throw new Error(`Maps scraper status: ${runStatus}`);
-
-          const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`);
-          const results = await dataRes.json();
-
-          const leads = results.map((place: any) => {
-            const phoneRaw = place.phone || place.phoneUnformatted || '';
-            const whatsappNumero = sanitizePhoneNumber(phoneRaw, ddd);
-            return {
-              nome_empresa: place.title || place.name || '',
-              telefone_original: phoneRaw,
-              whatsapp_numero: whatsappNumero,
-              site: place.website || place.url || '',
-              endereco: place.address || place.street || '',
-              categoria: place.categoryName || keyword,
-              avaliacao: place.totalScore || place.rating || null,
-              total_avaliacoes: place.reviewsCount || place.reviews || 0,
-              status: whatsappNumero ? 'validado' : 'extraido',
-              fonte: 'apify',
-              user_id: userId || null,
-            };
-          });
-
-          // Insert in batches
-          for (let i = 0; i < leads.length; i += 500) {
-            const batch = leads.slice(i, i + 500);
-            const { error: insertError } = await supabase.from('leads').insert(batch);
-            if (insertError) throw insertError;
-          }
-          leadsCount = leads.length;
+        for (let i = 0; i < leads.length; i += 500) {
+          const { error: insertError } = await supabase.from('leads').insert(leads.slice(i, i + 500));
+          if (insertError) throw new Error(`Erro ao salvar leads Google Maps: ${insertError.message}`);
         }
+        leadsCount = leads.length;
       }
 
-      await supabase.from('extraction_logs').insert({
-        session_id: sessionId, tipo: 'success',
-        mensagem: `🎉 Extração concluída! ${leadsCount} resultados salvos.`
-      });
+      await logToSession(supabase, sessionId, 'success', `🎉 Extração concluída! ${leadsCount} resultados salvos.`);
+    } else {
+      return errorResponse('Provider inválido', `apiProvider "${apiProvider}" não é suportado. Use "apify" ou "mock".`);
     }
 
-    // Final log
-    await supabase.from('extraction_logs').insert({
-      session_id: sessionId, tipo: 'success',
-      mensagem: `🎉 Total: ${leadsCount} resultados extraídos e salvos.`,
-      dados: { total: leadsCount, source, searchType }
-    });
+    // Final success log
+    await logToSession(supabase, sessionId, 'success', `🎉 Total: ${leadsCount} resultados extraídos e salvos.`, { total: leadsCount, source, searchType });
 
-    return new Response(
-      JSON.stringify({ success: true, leadsCount, source }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return successResponse({ leadsCount, source });
 
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[extract-leads] Error:', errorMessage);
-    return new Response(
-      JSON.stringify({ success: false, error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[extract-leads] Unhandled error: ${errorMessage}`);
+
+    // Try to log the error to session
+    if (sessionId) {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        if (supabaseUrl && supabaseKey) {
+          const supabase = createClient(supabaseUrl, supabaseKey);
+          await logToSession(supabase, sessionId, 'error', `❌ ${errorMessage}`);
+        }
+      } catch { /* ignore logging errors */ }
+    }
+
+    // Return 200 with success:false so frontend gets the actual error message
+    return errorResponse(errorMessage, 'Erro interno do scraper');
   }
 });
