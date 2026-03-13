@@ -62,14 +62,20 @@ serve(async (req) => {
 
     console.log(`[extract-leads] Source: ${source}, Type: ${searchType}, Query: ${keyword}, Location: ${location}`);
 
+    // Fetch user's Apify token from profile (persisted permanently)
     let userApifyToken: string | null = null;
     if (userId && apiProvider === 'apify') {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('apify_api_token')
         .eq('user_id', userId)
         .single();
+      
+      if (profileError) {
+        console.log(`[extract-leads] Profile fetch error: ${profileError.message}`);
+      }
       userApifyToken = profile?.apify_api_token || null;
+      console.log(`[extract-leads] User token found: ${!!userApifyToken}`);
     }
 
     await supabase.from('extraction_logs').insert({
@@ -216,7 +222,31 @@ serve(async (req) => {
     } else if (apiProvider === 'apify') {
       const apifyKey = userApifyToken || Deno.env.get('APIFY_API_KEY');
       if (!apifyKey) {
-        throw new Error('Token Apify não configurado.');
+        await supabase.from('extraction_logs').insert({
+          session_id: sessionId, tipo: 'error',
+          mensagem: '❌ Token Apify não configurado. Vá em Configurações e insira seu token.'
+        });
+        throw new Error('Token Apify não configurado. Configure em Configurações > API Token Apify.');
+      }
+
+      // Validate token before proceeding
+      console.log(`[extract-leads] Validating Apify token...`);
+      const validateRes = await fetch(`https://api.apify.com/v2/users/me?token=${apifyKey}`);
+      if (!validateRes.ok) {
+        const errBody = await validateRes.text();
+        console.log(`[extract-leads] Token validation failed: ${validateRes.status} - ${errBody}`);
+        await supabase.from('extraction_logs').insert({
+          session_id: sessionId, tipo: 'error',
+          mensagem: '❌ Token Apify inválido ou expirado. Atualize em Configurações.'
+        });
+        throw new Error('Token Apify inválido ou expirado. Atualize em Configurações.');
+      } else {
+        const userData = await validateRes.json();
+        console.log(`[extract-leads] Token valid for user: ${userData.data?.username || 'unknown'}`);
+        await supabase.from('extraction_logs').insert({
+          session_id: sessionId, tipo: 'info',
+          mensagem: `🔑 Token Apify validado (${userData.data?.username || 'OK'})`
+        });
       }
 
       if (source === 'telegram') {
