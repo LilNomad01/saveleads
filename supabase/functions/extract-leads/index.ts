@@ -135,13 +135,11 @@ function sanitizePhoneNumber(phone: string, ddd: string = '11'): string {
   if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
   if (cleaned.length >= 8 && cleaned.length <= 9) cleaned = ddd + cleaned;
   if (cleaned.length === 10 || cleaned.length === 11) cleaned = '55' + cleaned;
-  if (cleaned.length < 12 || cleaned.length > 13)
-
- return '';
+  if (cleaned.length < 12 || cleaned.length > 13) return '';
   return cleaned;
 }
 
-function extractD. DD(location: string): string {
+function extractDDD(location: string): string {
   const dddMap: Record<string, string> = {
     'são paulo': '11', 'sao paulo': '11', 'sp': '11',
     'rio de janeiro': '21', 'rj': '21',
