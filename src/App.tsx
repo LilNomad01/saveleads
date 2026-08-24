@@ -26,8 +26,10 @@ const App = () => (
           <Route path="/leads" element={<LeadExtractor />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/configuracoes" element={<Settings />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/auto-dispatch" element={<AutoDispatch />} />
+          <Route path="/automacao" element={<AutoDispatch />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
