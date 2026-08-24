@@ -1,73 +1,71 @@
-# Welcome to your Lovable project
+# Lead Navigator Pro
 
-## Project info
+Crie um SaaS de Automação de Marketing B2B com foco em prospecção via Google Maps e WhatsApp. A interface deve ser moderna, limpa (estilo Dashboard administrativa) e dividida em 3 módulos principais:
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Módulo 1: Extrator de Leads (Google Maps)
 
-## How can I edit this code?
+Interface de busca com campos para 'Palavra-chave' (ex: Pizzaria) e 'Localização' (ex: São Paulo).
 
-There are several ways of editing your application.
+Tabela dinâmica para exibir os resultados em tempo real contendo: Nome da Empresa, Telefone, Site e Status de Extração.
 
-**Use Lovable**
+Botão para 'Exportar para Excel' e botão 'Enviar para Campanha de Disparo'.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+Nota técnica: Implemente a lógica de interface que simula a conexão com uma API de busca (como Google Places API ou um serviço de scraping como SerpApi/Outscraper).
 
-Changes made via Lovable will be committed automatically to this repo.
+Módulo 2: Gerenciador de Disparos (WhatsApp)
 
-**Use your preferred IDE**
+Área de conexão via QR Code (estilo WhatsApp Web).
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+Configurador de mensagens sequenciais: Permitir configurar até 5 blocos de mensagens diferentes.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+Suporte para upload de imagem/mídia para acompanhar o disparo.
 
-Follow these steps:
+Opção de variáveis dinâmicas no texto, como 'Olá {{empresa}}'.
+
+Botão 'Iniciar Campanha' com barra de progresso.
+
+Módulo 3: Dashboard de Analytics
+
+Cards de resumo no topo: 'Total de Leads Extraídos', 'Leads Qualificados', 'Mensagens Enviadas' e 'Taxa de Entrega'.
+
+Gráfico de linha ou barras mostrando o desempenho das extrações e disparos por dia.
+
+Lista de 'Atividade Recente' mostrando os últimos números contatados.
+
+Design e UX:
+
+Use uma paleta de cores profissional (Azul escuro, Branco e detalhes em Verde para o WhatsApp).
+
+Use componentes do Shadcn/UI se possível.
+
+O layout deve ser responsivo com uma barra lateral de navegação (Sidebar).
+
+Garanta que a transição entre a extração de dados e a configuração do disparo seja fluida (fluxo de usuário contínuo)."
+
+Dicas extras para o seu projeto:
+A questão da extração real: O Lovable constrói a interface e a lógica de estado, mas ele não consegue "raspar" o Google Maps sozinho por causa de restrições de segurança do navegador. Você precisará conectar esse front-end que ele criar a uma API externa (como a SerpApi para o Google Maps e a Evolution API ou Z-API para o WhatsApp) para que o sistema funcione de verdade.
+
+Persistência de dados: Peça ao Lovable para usar Supabase para salvar os leads extraídos. Ele tem integração nativa e facilitará muito sua vida para criar o banco de dados dos leads.
+
+This project was built with [Lovable](https://lovable.dev).
+
+**Live app**: https://saveleads.lovable.app
+
+## Build with Lovable
+
+Continue developing this project in the [Lovable editor](https://lovable.dev/projects/98740743-6310-46e0-a771-f42a3939683f).
+
+- **Ship faster**: describe what you want to build and Lovable handles the code.
+- **Stay in sync**: every change made in Lovable is committed straight to this repository.
+- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+
+## Development
+
+Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
+git clone <this-repository-url>
+cd <repository-name>
 npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
 npm run dev
 ```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
