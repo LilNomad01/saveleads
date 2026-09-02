@@ -52,6 +52,24 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
   falhou: { label: 'Falhou', variant: 'destructive' },
 };
 
+const hasRealWebsite = (site: string | null | undefined) => {
+  if (!site?.trim()) return false;
+  const normalized = site.trim().toLowerCase();
+
+  // Versões antigas do extrator salvavam a URL da ficha do Google Maps
+  // no campo de site. Isso não deve contar como website da empresa.
+  return !(
+    normalized.includes('google.com/maps') ||
+    normalized.includes('maps.google.') ||
+    normalized.includes('goo.gl/maps')
+  );
+};
+
+const toWebsiteHref = (site: string) => {
+  const trimmed = site.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+};
+
 export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: LeadsTableRealProps) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -95,8 +113,9 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
       if (filters.minRating !== null && (!lead.avaliacao || lead.avaliacao < filters.minRating)) return false;
 
       // Website filter
-      if (filters.hasWebsite === 'yes' && !lead.site) return false;
-      if (filters.hasWebsite === 'no' && lead.site) return false;
+      const hasWebsite = hasRealWebsite(lead.site);
+      if (filters.hasWebsite === 'yes' && !hasWebsite) return false;
+      if (filters.hasWebsite === 'no' && hasWebsite) return false;
 
       return true;
     });
@@ -425,9 +444,9 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                             {lead.avaliacao}
                           </span>
                         )}
-                        {lead.site && (
+                        {hasRealWebsite(lead.site) && lead.site && (
                           <a 
-                            href={`https://${lead.site}`} 
+                            href={toWebsiteHref(lead.site)} 
                             target="_blank" 
                             rel="noopener noreferrer"
                             className="flex items-center gap-1 text-primary hover:underline"
@@ -538,9 +557,9 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                       )}
                     </TableCell>
                     <TableCell>
-                      {lead.site ? (
+                      {hasRealWebsite(lead.site) && lead.site ? (
                         <a 
-                          href={`https://${lead.site}`} 
+                          href={toWebsiteHref(lead.site)} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="flex items-center gap-1 text-primary hover:underline text-sm"

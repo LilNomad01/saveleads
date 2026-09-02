@@ -14,7 +14,8 @@ export function useLeadExtraction() {
     apiProvider: 'apify' | 'mock' = 'apify',
     maxResults: number = 100,
     source: string = 'google_maps',
-    searchType: string = 'empresas'
+    searchType: string = 'empresas',
+    websiteFilter: 'all' | 'without' = 'all'
   ) => {
     const newSessionId = crypto.randomUUID();
     setSessionId(newSessionId);
@@ -30,7 +31,8 @@ export function useLeadExtraction() {
           maxResults,
           userId: user?.id,
           source,
-          searchType
+          searchType,
+          websiteFilter
         }
       });
 

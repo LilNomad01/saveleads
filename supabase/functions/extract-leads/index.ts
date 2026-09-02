@@ -170,6 +170,7 @@ interface ExtractRequest {
   userId?: string;
   source?: 'google_maps' | 'telegram' | 'google_reviews' | 'linkedin';
   searchType?: string;
+  websiteFilter?: 'all' | 'without';
 }
 
 serve(async (req) => {
@@ -196,10 +197,20 @@ serve(async (req) => {
       return errorResponse('Payload inválido', 'O body da requisição não é um JSON válido');
     }
 
-    const { keyword, location = '', sessionId: sid, apiProvider = 'mock', maxResults = 100, userId, source = 'google_maps', searchType = 'empresas' } = payload;
+    const {
+      keyword,
+      location = '',
+      sessionId: sid,
+      apiProvider = 'mock',
+      maxResults = 100,
+      userId,
+      source = 'google_maps',
+      searchType = 'empresas',
+      websiteFilter = 'all',
+    } = payload;
     sessionId = sid;
 
-    console.log(`[extract-leads] Payload: source=${source}, type=${searchType}, keyword="${keyword}", location="${location}", provider=${apiProvider}, max=${maxResults}`);
+    console.log(`[extract-leads] Payload: source=${source}, type=${searchType}, keyword="${keyword}", location="${location}", provider=${apiProvider}, max=${maxResults}, websiteFilter=${websiteFilter}`);
 
     if (!keyword || !keyword.trim()) {
       await logToSession(supabase, sessionId, 'error', '❌ Query/palavra-chave é obrigatória');
@@ -212,7 +223,12 @@ serve(async (req) => {
       return errorResponse('Limite inválido', `maxResults deve ser entre 1 e 10000, recebido: ${maxResults}`);
     }
 
-    await logToSession(supabase, sessionId, 'info', `🔍 Iniciando extração: "${keyword}" | Fonte: ${source} | Tipo: ${searchType}`);
+    await logToSession(
+      supabase,
+      sessionId,
+      'info',
+      `🔍 Iniciando extração: "${keyword}" | Fonte: ${source} | Tipo: ${searchType}${source === 'google_maps' && websiteFilter === 'without' ? ' | 🚫 Somente empresas sem site' : ''}`
+    );
 
     const ddd = extractDDD(location);
     let leadsCount = 0;
@@ -296,11 +312,14 @@ serve(async (req) => {
           const businessName = `${keyword} ${suffix}${i >= suffixes.length ? ` ${i + 1}` : ''}`;
           const celular = `9${Math.floor(10000000 + Math.random() * 90000000)}`;
           const whatsappNumero = sanitizePhoneNumber(celular, ddd);
+          const mockWebsite = websiteFilter === 'without'
+            ? ''
+            : (i % 3 === 0 ? '' : `www.${businessName.toLowerCase().replace(/\s+/g, '').replace(/[&]/g, 'e')}.com.br`);
           leads.push({
             nome_empresa: businessName,
             telefone_original: `(${ddd}) ${celular.substring(0, 5)}-${celular.substring(5)}`,
             whatsapp_numero: whatsappNumero,
-            site: `www.${businessName.toLowerCase().replace(/\s+/g, '').replace(/[&]/g, 'e')}.com.br`,
+            site: mockWebsite,
             endereco: `${location} - Centro`,
             categoria: keyword,
             avaliacao: Number((3.8 + (i % 12) * 0.1).toFixed(1)),
@@ -472,13 +491,24 @@ serve(async (req) => {
 
       // ---- GOOGLE MAPS (default) ----
       } else {
-        await logToSession(supabase, sessionId, 'info', '🔗 Conectando ao Google Maps Scraper (Apify)...');
+        const crawlLimit = websiteFilter === 'without'
+          ? Math.min(Math.max((maxResults || 100) * 3, maxResults || 100), 10000)
+          : (maxResults || 100);
+
+        await logToSession(
+          supabase,
+          sessionId,
+          'info',
+          websiteFilter === 'without'
+            ? `🔗 Conectando ao Google Maps Scraper (Apify)... buscando até ${crawlLimit} empresas para encontrar ${maxResults} sem site.`
+            : '🔗 Conectando ao Google Maps Scraper (Apify)...'
+        );
         const results = await runApifyActor(
           'compass~crawler-google-places',
           {
             searchStringsArray: [keyword],
             locationQuery: location ? `${location}, Brasil` : 'Brasil',
-            maxCrawledPlacesPerSearch: maxResults || 100,
+            maxCrawledPlacesPerSearch: crawlLimit,
             language: 'pt-BR',
             deeperCityScrape: true,
             skipClosedPlaces: true,
@@ -486,14 +516,31 @@ serve(async (req) => {
           apifyKey, supabase, sessionId, 'Google Maps Scraper', 120
         );
 
-        const leads = results.map((place: any) => {
+        // IMPORTANTE: place.url é a URL da ficha no Google Maps, não o site da empresa.
+        // Para identificar empresas realmente sem site, usamos exclusivamente place.website.
+        const filteredResults = websiteFilter === 'without'
+          ? results.filter((place: any) => !String(place.website || '').trim())
+          : results;
+
+        const selectedResults = filteredResults.slice(0, maxResults || 100);
+
+        if (websiteFilter === 'without') {
+          await logToSession(
+            supabase,
+            sessionId,
+            'info',
+            `🚫 Filtro sem site: ${results.length} empresas analisadas, ${filteredResults.length} sem website, ${selectedResults.length} selecionadas.`
+          );
+        }
+
+        const leads = selectedResults.map((place: any) => {
           const phoneRaw = place.phone || place.phoneUnformatted || '';
           const whatsappNumero = sanitizePhoneNumber(phoneRaw, ddd);
           return {
             nome_empresa: place.title || place.name || '',
             telefone_original: phoneRaw,
             whatsapp_numero: whatsappNumero,
-            site: place.website || place.url || '',
+            site: String(place.website || '').trim(),
             endereco: place.address || place.street || '',
             categoria: place.categoryName || keyword,
             avaliacao: place.totalScore || place.rating || null,

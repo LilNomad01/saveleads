@@ -57,6 +57,7 @@ interface LeadSearchFormProps {
     location: string;
     maxResults: number;
     apiProvider: 'apify' | 'mock';
+    websiteFilter: 'all' | 'without';
   }) => void;
   isLoading: boolean;
 }
@@ -68,6 +69,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
   const [location, setLocation] = useState("");
   const [maxResults, setMaxResults] = useState(100);
   const [apiProvider, setApiProvider] = useState<'apify' | 'mock'>('apify');
+  const [websiteFilter, setWebsiteFilter] = useState<'all' | 'without'>('all');
 
   const currentConfig = sourceConfig[source];
   const showLocation = source !== 'telegram' && source !== 'linkedin';
@@ -75,12 +77,15 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
   const handleSourceChange = (newSource: DataSource) => {
     setSource(newSource);
     setSearchType(sourceConfig[newSource].searchTypes[0].value);
+    if (newSource !== 'google_maps') {
+      setWebsiteFilter('all');
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (query) {
-      onSearch({ source, searchType, query, location, maxResults, apiProvider });
+      onSearch({ source, searchType, query, location, maxResults, apiProvider, websiteFilter });
     }
   };
 
@@ -102,7 +107,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
         </Select>
       </div>
       
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-7">
         {/* Fonte de dados */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Fonte de Dados</Label>
@@ -178,6 +183,29 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
             step={100}
             className="mt-3"
           />
+        </div>
+
+        {/* Filtro de website (Google Maps) */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Filtro de Site</Label>
+          <Select
+            value={websiteFilter}
+            onValueChange={(value) => setWebsiteFilter(value as 'all' | 'without')}
+            disabled={source !== 'google_maps'}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as empresas</SelectItem>
+              <SelectItem value="without">🚫 Somente sem site</SelectItem>
+            </SelectContent>
+          </Select>
+          {source === 'google_maps' && websiteFilter === 'without' && (
+            <p className="text-xs text-muted-foreground">
+              Só salva empresas sem website cadastrado no Google Maps.
+            </p>
+          )}
         </div>
         
         {/* Botão */}

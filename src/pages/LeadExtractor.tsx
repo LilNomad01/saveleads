@@ -33,6 +33,7 @@ export default function LeadExtractor() {
     location: string;
     maxResults: number;
     apiProvider: 'apify' | 'mock';
+    websiteFilter: 'all' | 'without';
   }) => {
     // Switch to the tab of the source being extracted
     setActiveTab(params.source);
@@ -43,7 +44,8 @@ export default function LeadExtractor() {
       params.apiProvider,
       params.maxResults,
       params.source,
-      params.searchType
+      params.searchType,
+      params.websiteFilter
     );
   };
 
