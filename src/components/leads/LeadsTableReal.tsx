@@ -153,15 +153,20 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
   };
 
   const selectWithoutWebsite = () => {
-    const leadsWithoutWebsite = filteredLeads.filter(l => !hasRealWebsite(l.site));
-    setSelectedLeads(new Set(leadsWithoutWebsite.map(l => l.id)));
+    // Seleciona SOMENTE empresas sem site real E com telefone movel/WhatsApp.
+    // Exclui telefone fixo e empresas sem numero movel.
+    const leadsWithoutWebsiteMobile = filteredLeads.filter(
+      l => !hasRealWebsite(l.site) && isWhatsAppCompatible(l.whatsapp_numero)
+    );
 
-    if (leadsWithoutWebsite.length === 0) {
-      toast.info('Nenhuma empresa sem site encontrada nos resultados atuais.');
+    setSelectedLeads(new Set(leadsWithoutWebsiteMobile.map(l => l.id)));
+
+    if (leadsWithoutWebsiteMobile.length === 0) {
+      toast.info('Nenhuma empresa sem site + móvel encontrada nos resultados atuais.');
       return;
     }
 
-    toast.success(`${leadsWithoutWebsite.length} empresas sem site selecionadas!`);
+    toast.success(`${leadsWithoutWebsiteMobile.length} empresas sem site + móvel selecionadas!`);
   };
 
   const exportPhonesToXLSX = () => {
@@ -306,7 +311,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                   className="flex-1 text-xs"
                 >
                   <Globe className="h-3 w-3" />
-                  Sem site
+                  Sem site + Móvel
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -352,7 +357,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                   onClick={selectWithoutWebsite}
                 >
                   <Globe className="h-4 w-4" />
-                  Selecionar sem site
+                  Sem site + Móvel
                 </Button>
                 <Button 
                   variant="outline" 
