@@ -7,17 +7,63 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { toast } from 'sonner';
 import { Eye, EyeOff, Key, Loader2, Save, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
 
-async function validateApifyToken(token: string): Promise<{ valid: boolean; username?: string; error?: string }> {
+function normalizeApifyToken(rawToken: string): string {
+  return rawToken
+    .trim()
+    .replace(/^Bearer\\s+/i, '')
+    .replace(/^["']|["']$/g, '')
+    .trim();
+}
+
+async function validateApifyToken(token: string): Promise<{ valid: boolean; username?: string; error?: string; canSave?: boolean }> {
+  const cleanToken = normalizeApifyToken(token);
+  if (!cleanToken) {
+    return { valid: false, error: 'Token vazio', canSave: false };
+  }
+
   try {
-    const res = await fetch(`https://api.apify.com/v2/users/me?token=${token}`);
+    const res = await fetch('https://api.apify.com/v2/users/me', {
+      headers: {
+        Authorization: `Bearer ${cleanToken}`,
+      },
+    });
+
     if (res.ok) {
       const data = await res.json();
-      return { valid: true, username: data.data?.username || data.data?.email || 'OK' };
+      return {
+        valid: true,
+        username: data.data?.username || data.data?.email || 'OK',
+        canSave: true,
+      };
     }
-    if (res.status === 401) return { valid: false, error: 'Token inválido ou expirado' };
-    return { valid: false, error: `Erro ${res.status}` };
-  } catch (e: any) {
-    return { valid: false, error: 'Erro de conexão com Apify' };
+
+    // 401 significa credencial realmente rejeitada.
+    if (res.status === 401) {
+      return { valid: false, error: 'Token rejeitado pela Apify (401)', canSave: false };
+    }
+
+    // Tokens com escopo limitado podem nao ter permissao para /users/me.
+    // Nao bloqueamos o salvamento: a Edge Function testa no Actor real.
+    if (res.status === 403) {
+      return {
+        valid: true,
+        username: 'token com permissão limitada',
+        canSave: true,
+      };
+    }
+
+    return {
+      valid: true,
+      username: `token salvo para teste na extração (HTTP ${res.status})`,
+      canSave: true,
+    };
+  } catch {
+    // Falha de CORS/rede no navegador nao deve impedir salvar um token novo.
+    return {
+      valid: true,
+      username: 'token salvo para teste na extração',
+      canSave: true,
+    };
   }
 }
 

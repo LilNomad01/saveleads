@@ -26,17 +26,43 @@ function errorResponse(error: string, details: string = '', status = 200) {
   });
 }
 
-async function validateApifyToken(token: string): Promise<{ valid: boolean; username?: string; error?: string }> {
+async function validateApifyToken(token: string): Promise<{ valid: boolean; username?: string; error?: string; status?: number }> {
   try {
-    const res = await fetch(`https://api.apify.com/v2/users/me?token=${token}`);
+    const res = await fetch('https://api.apify.com/v2/users/me', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
     if (res.ok) {
       const data = await res.json();
-      return { valid: true, username: data.data?.username || 'OK' };
+      return { valid: true, username: data.data?.username || 'OK', status: res.status };
     }
+
     const body = await res.text();
-    return { valid: false, error: `Status ${res.status}: ${body.substring(0, 200)}` };
+
+    // 403 pode ser apenas falta de permissao do token com escopo limitado
+    // para ler /users/me. O Actor real sera a validacao definitiva.
+    if (res.status === 403) {
+      return {
+        valid: true,
+        username: 'token com escopo limitado',
+        error: `Status 403 em /users/me: ${body.substring(0, 200)}`,
+        status: res.status,
+      };
+    }
+
+    return {
+      valid: false,
+      error: `Status ${res.status}: ${body.substring(0, 200)}`,
+      status: res.status,
+    };
   } catch (e: any) {
-    return { valid: false, error: `Conexão falhou: ${e.message}` };
+    return {
+      valid: true,
+      username: 'token nao pre-validado',
+      error: `Pré-validação indisponível: ${e.message}`,
+    };
   }
 }
 
@@ -49,13 +75,16 @@ async function runApifyActor(
   label: string,
   maxPollAttempts = 120,
 ): Promise<any[]> {
-  const url = `https://api.apify.com/v2/acts/${actorId}/runs?token=${apifyKey}`;
+  const url = `https://api.apify.com/v2/acts/${actorId}/runs`;
   console.log(`[extract-leads] Starting actor: ${actorId}`);
   console.log(`[extract-leads] Actor input: ${JSON.stringify(input)}`);
 
   const runResponse = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apifyKey}`,
+    },
     body: JSON.stringify(input),
   });
 
@@ -88,7 +117,9 @@ async function runApifyActor(
   let runStatus = 'RUNNING';
   while ((runStatus === 'RUNNING' || runStatus === 'READY') && attempts < maxPollAttempts) {
     await new Promise(resolve => setTimeout(resolve, 5000));
-    const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyKey}`);
+    const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}`, {
+      headers: { 'Authorization': `Bearer ${apifyKey}` },
+    });
     const statusBody = await statusRes.text();
     const statusData = tryParseJSON(statusBody);
     runStatus = statusData?.data?.status || 'UNKNOWN';
@@ -105,7 +136,9 @@ async function runApifyActor(
     throw new Error(`${label} finalizou com status: ${runStatus}. Verifique os logs no Apify.`);
   }
 
-  const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyKey}`);
+  const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items`, {
+    headers: { 'Authorization': `Bearer ${apifyKey}` },
+  });
   if (!dataRes.ok) {
     const errBody = await dataRes.text();
     throw new Error(`Falha ao buscar resultados do ${label}: HTTP ${dataRes.status} - ${errBody.substring(0, 200)}`);
@@ -366,11 +399,25 @@ serve(async (req) => {
       const tokenValidation = await validateApifyToken(apifyKey);
       if (!tokenValidation.valid) {
         console.error(`[extract-leads] Token validation failed: ${tokenValidation.error}`);
-        await logToSession(supabase, sessionId, 'error', `❌ Token Apify inválido ou expirado: ${tokenValidation.error}`);
-        return errorResponse('Token Apify inválido ou expirado', `Validação falhou: ${tokenValidation.error}. Atualize em Configurações.`);
+
+        if (tokenValidation.status === 401) {
+          await logToSession(supabase, sessionId, 'error', `❌ Token Apify rejeitado (401): ${tokenValidation.error}`);
+          return errorResponse(
+            'Token Apify rejeitado',
+            'A Apify respondeu 401. Copie novamente o Personal API token em Settings > API & Integrations.'
+          );
+        }
+
+        await logToSession(
+          supabase,
+          sessionId,
+          'warning',
+          `⚠️ Não foi possível pré-validar o token (${tokenValidation.error}). Tentando o Actor diretamente...`
+        );
+      } else {
+        console.log(`[extract-leads] Token accepted/pre-accepted: ${tokenValidation.username}`);
+        await logToSession(supabase, sessionId, 'info', `🔑 Token Apify carregado (${tokenValidation.username})`);
       }
-      console.log(`[extract-leads] Token valid for user: ${tokenValidation.username}`);
-      await logToSession(supabase, sessionId, 'info', `🔑 Token Apify validado (${tokenValidation.username})`);
 
       // ---- TELEGRAM ----
       if (source === 'telegram') {
