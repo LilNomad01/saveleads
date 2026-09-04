@@ -27,43 +27,14 @@ function errorResponse(error: string, details: string = '', status = 200) {
 }
 
 async function validateApifyToken(token: string): Promise<{ valid: boolean; username?: string; error?: string; status?: number }> {
-  try {
-    const res = await fetch('https://api.apify.com/v2/users/me', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+  const cleanToken = String(token || '').trim().replace(/^Bearer\s+/i, '').replace(/^["']|["']$/g, '').trim();
 
-    if (res.ok) {
-      const data = await res.json();
-      return { valid: true, username: data.data?.username || 'OK', status: res.status };
-    }
-
-    const body = await res.text();
-
-    // 403 pode ser apenas falta de permissao do token com escopo limitado
-    // para ler /users/me. O Actor real sera a validacao definitiva.
-    if (res.status === 403) {
-      return {
-        valid: true,
-        username: 'token com escopo limitado',
-        error: `Status 403 em /users/me: ${body.substring(0, 200)}`,
-        status: res.status,
-      };
-    }
-
-    return {
-      valid: false,
-      error: `Status ${res.status}: ${body.substring(0, 200)}`,
-      status: res.status,
-    };
-  } catch (e: any) {
-    return {
-      valid: true,
-      username: 'token nao pre-validado',
-      error: `Pré-validação indisponível: ${e.message}`,
-    };
+  if (!cleanToken) {
+    return { valid: false, error: 'Token vazio' };
   }
+
+  // Nao usa /users/me como bloqueio. O Actor real e a fonte de verdade.
+  return { valid: true, username: 'token configurado' };
 }
 
 async function runApifyActor(
@@ -387,6 +358,10 @@ serve(async (req) => {
       if (!apifyKey) {
         apifyKey = Deno.env.get('APIFY_API_KEY') || null;
         console.log(`[extract-leads] Fallback to env APIFY_API_KEY: ${!!apifyKey}`);
+      }
+
+      if (apifyKey) {
+        apifyKey = String(apifyKey).trim().replace(/^Bearer\s+/i, '').replace(/^[\"']|[\"']$/g, '').trim();
       }
 
       if (!apifyKey) {

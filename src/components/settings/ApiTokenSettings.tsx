@@ -21,50 +21,9 @@ async function validateApifyToken(token: string): Promise<{ valid: boolean; user
     return { valid: false, error: 'Token vazio', canSave: false };
   }
 
-  try {
-    const res = await fetch('https://api.apify.com/v2/users/me', {
-      headers: {
-        Authorization: `Bearer ${cleanToken}`,
-      },
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        valid: true,
-        username: data.data?.username || data.data?.email || 'OK',
-        canSave: true,
-      };
-    }
-
-    // 401 significa credencial realmente rejeitada.
-    if (res.status === 401) {
-      return { valid: false, error: 'Token rejeitado pela Apify (401)', canSave: false };
-    }
-
-    // Tokens com escopo limitado podem nao ter permissao para /users/me.
-    // Nao bloqueamos o salvamento: a Edge Function testa no Actor real.
-    if (res.status === 403) {
-      return {
-        valid: true,
-        username: 'token com permissão limitada',
-        canSave: true,
-      };
-    }
-
-    return {
-      valid: true,
-      username: `token salvo para teste na extração (HTTP ${res.status})`,
-      canSave: true,
-    };
-  } catch {
-    // Falha de CORS/rede no navegador nao deve impedir salvar um token novo.
-    return {
-      valid: true,
-      username: 'token salvo para teste na extração',
-      canSave: true,
-    };
-  }
+  // Nao bloqueia o token pelo endpoint /users/me.
+  // A validacao real acontece quando o Actor do Apify e executado.
+  return { valid: true, username: 'configurado', canSave: true };
 }
 
 export function ApiTokenSettings() {
@@ -92,32 +51,26 @@ export function ApiTokenSettings() {
   };
 
   const handleSave = async () => {
-    if (!token.trim()) {
+    const cleanToken = normalizeApifyToken(token);
+
+    if (!cleanToken) {
       toast.error('Digite um token válido');
       return;
     }
 
-    // Validate first
     setIsSaving(true);
-    toast.info('Validando token com a API Apify...');
-    const validation = await validateApifyToken(token.trim());
 
-    if (!validation.valid) {
-      toast.error(`Token Apify inválido: ${validation.error}`);
-      setIsSaving(false);
-      return;
-    }
+    const { error } = await updateProfile({ apify_api_token: cleanToken });
 
-    const { error } = await updateProfile({ apify_api_token: token.trim() });
-    
     if (error) {
       toast.error('Erro ao salvar token');
     } else {
-      toast.success(`Token válido e salvo! Usuário: ${validation.username}`);
+      toast.success('Token Apify salvo! A validação será feita na próxima extração.');
       setToken('');
       setTokenStatus('valid');
-      setTokenUser(validation.username || null);
+      setTokenUser(null);
     }
+
     setIsSaving(false);
   };
 
