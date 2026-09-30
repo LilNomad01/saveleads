@@ -396,7 +396,7 @@ serve(async (req) => {
           const suffix = suffixes[i % suffixes.length];
           const businessName = `${keyword} ${suffix}${i >= suffixes.length ? ` ${i + 1}` : ''}`;
           const celular = `9${Math.floor(10000000 + Math.random() * 90000000)}`;
-          const whatsappNumero = sanitizePhoneNumber(celular, ddd);
+          const whatsappNumero = sanitizePhoneNumber(celular, ddd, searchContext.country);
           const mockWebsite = websiteFilter === 'without'
             ? ''
             : (i % 3 === 0 ? '' : `www.${businessName.toLowerCase().replace(/\s+/g, '').replace(/[&]/g, 'e')}.com.br`);
