@@ -133,14 +133,87 @@ async function logToSession(supabase: any, sessionId: string, tipo: string, mens
 
 // =================== UTILITIES ===================
 
-function sanitizePhoneNumber(phone: string, ddd: string = '11'): string {
+type SearchContext = {
+  locationQuery: string;
+  language: string;
+  country: 'BR' | 'US' | 'OTHER';
+};
+
+function resolveSearchContext(location: string): SearchContext {
+  const raw = String(location || '').trim();
+  if (!raw) {
+    return { locationQuery: 'Brasil', language: 'pt-BR', country: 'BR' };
+  }
+
+  const normalized = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  const usStates = [
+    'alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware',
+    'florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky',
+    'louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi',
+    'missouri','montana','nebraska','nevada','new hampshire','new jersey','new mexico',
+    'new york','north carolina','north dakota','ohio','oklahoma','oregon','pennsylvania',
+    'rhode island','south carolina','south dakota','tennessee','texas','utah','vermont',
+    'virginia','washington','west virginia','wisconsin','wyoming','district of columbia'
+  ];
+  const usAbbreviations = new Set([
+    'al','ak','az','ar','ca','co','ct','de','fl','ga','hi','id','il','in','ia','ks','ky',
+    'la','me','md','ma','mi','mn','ms','mo','mt','ne','nv','nh','nj','nm','ny','nc','nd',
+    'oh','ok','or','pa','ri','sc','sd','tn','tx','ut','vt','va','wa','wv','wi','wy','dc'
+  ]);
+
+  const parts = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+  const explicitUS =
+    /\b(usa|u\.?s\.?a\.?|united states|estados unidos|eua)\b/i.test(normalized) ||
+    usStates.some((state) => normalized.includes(state)) ||
+    parts.some((part) => usAbbreviations.has(part));
+
+  const explicitBR = /\b(brasil|brazil)\b/i.test(normalized);
+
+  if (explicitUS) {
+    // Keep the user's text intact and only add USA when it is not already explicit.
+    const hasCountry = /\b(usa|u\.?s\.?a\.?|united states|estados unidos|eua)\b/i.test(normalized);
+    return {
+      locationQuery: hasCountry ? raw : `${raw}, USA`,
+      language: 'en',
+      country: 'US',
+    };
+  }
+
+  if (explicitBR) {
+    return { locationQuery: raw, language: 'pt-BR', country: 'BR' };
+  }
+
+  // Important: do NOT force ", Brasil" here.
+  // Apify can geocode a city/state/country directly, enabling searches worldwide.
+  return { locationQuery: raw, language: 'en', country: 'OTHER' };
+}
+
+function sanitizePhoneNumber(phone: string, ddd: string = '11', country: 'BR' | 'US' | 'OTHER' = 'BR'): string {
   if (!phone) return '';
   let cleaned = phone.replace(/\D/g, '');
-  if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
-  if (cleaned.length >= 8 && cleaned.length <= 9) cleaned = ddd + cleaned;
-  if (cleaned.length === 10 || cleaned.length === 11) cleaned = '55' + cleaned;
-  if (cleaned.length < 12 || cleaned.length > 13) return '';
-  return cleaned;
+
+  if (country === 'US') {
+    if (cleaned.length === 11 && cleaned.startsWith('1')) return cleaned;
+    if (cleaned.length === 10) return '1' + cleaned;
+    return cleaned.length >= 10 && cleaned.length <= 15 ? cleaned : '';
+  }
+
+  if (country === 'BR') {
+    if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+    if (cleaned.startsWith('55') && (cleaned.length === 12 || cleaned.length === 13)) return cleaned;
+    if (cleaned.length >= 8 && cleaned.length <= 9) cleaned = ddd + cleaned;
+    if (cleaned.length === 10 || cleaned.length === 11) cleaned = '55' + cleaned;
+    if (cleaned.length < 12 || cleaned.length > 13) return '';
+    return cleaned;
+  }
+
+  // For other countries, preserve an already international-looking number
+  // instead of incorrectly prefixing Brazil's +55.
+  return cleaned.length >= 10 && cleaned.length <= 15 ? cleaned : '';
 }
 
 function extractDDD(location: string): string {
@@ -234,8 +307,16 @@ serve(async (req) => {
       `🔍 Iniciando extração: "${keyword}" | Fonte: ${source} | Tipo: ${searchType}${source === 'google_maps' && websiteFilter === 'without' ? ' | 🚫 Somente empresas sem site' : ''}`
     );
 
+    const searchContext = resolveSearchContext(location);
     const ddd = extractDDD(location);
     let leadsCount = 0;
+
+    await logToSession(
+      supabase,
+      sessionId,
+      'info',
+      `🌎 Localização resolvida: "${searchContext.locationQuery}" | Idioma: ${searchContext.language} | País: ${searchContext.country}`
+    );
 
     // =================== MOCK MODE ===================
     if (apiProvider === 'mock') {
@@ -469,9 +550,9 @@ serve(async (req) => {
           'compass~crawler-google-places',
           {
             searchStringsArray: [keyword],
-            locationQuery: location ? `${location}, Brasil` : 'Brasil',
+            locationQuery: searchContext.locationQuery,
             maxCrawledPlacesPerSearch: maxResults || 100,
-            language: 'pt-BR',
+            language: searchContext.language,
             deeperCityScrape: true,
             skipClosedPlaces: true,
             scrapeReviewsPersonalData: true,
@@ -529,9 +610,9 @@ serve(async (req) => {
           'compass~crawler-google-places',
           {
             searchStringsArray: [keyword],
-            locationQuery: location ? `${location}, Brasil` : 'Brasil',
+            locationQuery: searchContext.locationQuery,
             maxCrawledPlacesPerSearch: crawlLimit,
-            language: 'pt-BR',
+            language: searchContext.language,
             deeperCityScrape: true,
             skipClosedPlaces: true,
           },
@@ -557,7 +638,7 @@ serve(async (req) => {
 
         const leads = selectedResults.map((place: any) => {
           const phoneRaw = place.phone || place.phoneUnformatted || '';
-          const whatsappNumero = sanitizePhoneNumber(phoneRaw, ddd);
+          const whatsappNumero = sanitizePhoneNumber(phoneRaw, ddd, searchContext.country);
           return {
             nome_empresa: place.title || place.name || '',
             telefone_original: phoneRaw,
