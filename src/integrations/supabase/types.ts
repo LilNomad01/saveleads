@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_keys: {
+        Row: {
+          created_at: string
+          disabled_until: string | null
+          id: string
+          is_active: boolean
+          key_value: string
+          label: string | null
+          last_error: string | null
+          last_used_at: string | null
+          priority: number
+          provider: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          disabled_until?: string | null
+          id?: string
+          is_active?: boolean
+          key_value: string
+          label?: string | null
+          last_error?: string | null
+          last_used_at?: string | null
+          priority?: number
+          provider: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          disabled_until?: string | null
+          id?: string
+          is_active?: boolean
+          key_value?: string
+          label?: string | null
+          last_error?: string | null
+          last_used_at?: string | null
+          priority?: number
+          provider?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       automation_queue: {
         Row: {
           created_at: string
