@@ -25,6 +25,15 @@ type PhoneAnalysis = {
   carrier?: string | null;
   provider: "veriphone" | "libphonenumber";
   error?: string | null;
+  statusCode?: number | null;
+  rotateKey?: boolean;
+};
+
+type RotatingApiKey = {
+  id: string | null;
+  key: string;
+  label: string;
+  source: "pool" | "legacy" | "env";
 };
 
 function normalizeCandidate(phone: string | null | undefined): string | null {
@@ -111,6 +120,107 @@ function mapVeriphoneType(rawType: string | null | undefined): string {
   return "unknown";
 }
 
+function normalizeApiKey(raw: string | null | undefined): string {
+  return String(raw || "")
+    .trim()
+    .replace(/^Bearer\s+/i, "")
+    .replace(/^["']|["']$/g, "")
+    .trim();
+}
+
+async function loadRotatingKeys(
+  admin: any,
+  userId: string,
+  legacyKey?: string | null,
+  envKey?: string | null,
+): Promise<RotatingApiKey[]> {
+  const keys: RotatingApiKey[] = [];
+  const seen = new Set<string>();
+
+  const { data, error } = await admin
+    .from("api_keys")
+    .select("id, key_value, label, disabled_until")
+    .eq("user_id", userId)
+    .eq("provider", "veriphone")
+    .eq("is_active", true)
+    .order("last_used_at", { ascending: true, nullsFirst: true })
+    .order("priority", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("[verify-phone-numbers] Failed to load Veriphone key pool:", error.message);
+  } else {
+    const now = Date.now();
+    for (const row of data || []) {
+      if (row.disabled_until && new Date(row.disabled_until).getTime() > now) continue;
+      const key = normalizeApiKey(row.key_value);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      keys.push({
+        id: row.id,
+        key,
+        label: row.label || "Veriphone key",
+        source: "pool",
+      });
+    }
+  }
+
+  const normalizedLegacy = normalizeApiKey(legacyKey);
+  if (normalizedLegacy && !seen.has(normalizedLegacy)) {
+    seen.add(normalizedLegacy);
+    keys.push({
+      id: null,
+      key: normalizedLegacy,
+      label: "Veriphone legacy",
+      source: "legacy",
+    });
+  }
+
+  const normalizedEnv = normalizeApiKey(envKey);
+  if (normalizedEnv && !seen.has(normalizedEnv)) {
+    keys.push({
+      id: null,
+      key: normalizedEnv,
+      label: "Veriphone fallback",
+      source: "env",
+    });
+  }
+
+  return keys;
+}
+
+async function markPoolKeyUsed(admin: any, key: RotatingApiKey) {
+  if (!key.id) return;
+  await admin
+    .from("api_keys")
+    .update({
+      last_used_at: new Date().toISOString(),
+      last_error: null,
+      disabled_until: null,
+    })
+    .eq("id", key.id);
+}
+
+async function markPoolKeyFailed(admin: any, key: RotatingApiKey, message: string, statusCode?: number | null) {
+  if (!key.id) return;
+
+  const lower = message.toLowerCase();
+  const cooldownMinutes =
+    statusCode === 429 || lower.includes("rate") ? 15 :
+    statusCode === 401 ? 24 * 60 :
+    statusCode === 402 || lower.includes("quota") || lower.includes("credit") || lower.includes("limit") ? 12 * 60 :
+    statusCode === 403 ? 6 * 60 :
+    60;
+
+  await admin
+    .from("api_keys")
+    .update({
+      last_error: message.slice(0, 500),
+      disabled_until: new Date(Date.now() + cooldownMinutes * 60_000).toISOString(),
+    })
+    .eq("id", key.id);
+}
+
 async function lookupVeriphone(
   phone: string,
   apiKey: string,
@@ -154,11 +264,18 @@ async function lookupVeriphone(
         payload?.type ||
         `Veriphone HTTP ${response.status}`;
 
+      const text = String(message);
+      const rotateKey =
+        [401, 402, 403, 429].includes(response.status) ||
+        /(quota|credit|limit|subscription|plan|unauthori[sz]ed|forbidden|api.?key)/i.test(text);
+
       return {
         ok: false,
         valid: false,
         provider: "veriphone",
-        error: String(message).slice(0, 500),
+        error: text.slice(0, 500),
+        statusCode: response.status,
+        rotateKey,
       };
     } catch (error) {
       if (attempt === 0) {
@@ -180,6 +297,54 @@ async function lookupVeriphone(
     valid: false,
     provider: "veriphone",
     error: "Falha desconhecida no Veriphone",
+  };
+}
+
+async function lookupVeriphoneRotating(
+  phone: string,
+  keys: RotatingApiKey[],
+  startIndex: number,
+  admin: any,
+): Promise<PhoneAnalysis> {
+  if (keys.length === 0) {
+    return {
+      ok: false,
+      valid: false,
+      provider: "veriphone",
+      error: "Nenhuma chave Veriphone ativa disponível",
+    };
+  }
+
+  let lastResult: PhoneAnalysis | null = null;
+
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const keyIndex = (startIndex + attempt) % keys.length;
+    const key = keys[keyIndex];
+    const result = await lookupVeriphone(phone, key.key);
+    lastResult = result;
+
+    if (result.ok) {
+      await markPoolKeyUsed(admin, key);
+      return result;
+    }
+
+    if (!result.rotateKey) {
+      return result;
+    }
+
+    await markPoolKeyFailed(
+      admin,
+      key,
+      result.error || "Chave Veriphone indisponível",
+      result.statusCode,
+    );
+  }
+
+  return lastResult || {
+    ok: false,
+    valid: false,
+    provider: "veriphone",
+    error: "Todas as chaves Veriphone ficaram indisponíveis",
   };
 }
 
@@ -247,31 +412,25 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Free-only mode:
+  // Free-only mode with automatic key rotation:
   // 1) libphonenumber runs locally and consumes no API credits.
-  // 2) Veriphone standard lookup uses the API key saved in the user's profile first.
-  // 3) If the user has not configured one, the project Secret VERIPHONE_API_KEY is
-  //    used as a fallback. This lets the user switch Veriphone accounts from Settings
-  //    without editing Supabase Secrets or redeploying the Edge Function.
-  // 4) We only call mode=static here; no paid Current Carrier Lookup fallback is used.
+  // 2) Veriphone uses all active keys saved in Configurações.
+  // 3) Legacy profile key and project Secret remain fallbacks.
+  // 4) Only mode=static is used; no paid Current Carrier Lookup fallback.
   const admin = createClient(supabaseUrl, serviceRole);
 
-  let veriphoneKey: string | null = null;
   const { data: profile } = await admin
     .from("profiles")
     .select("veriphone_api_key")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  veriphoneKey = profile?.veriphone_api_key || Deno.env.get("VERIPHONE_API_KEY") || null;
-
-  if (veriphoneKey) {
-    veriphoneKey = String(veriphoneKey)
-      .trim()
-      .replace(/^Bearer\\s+/i, "")
-      .replace(/^[\"']|[\"']$/g, "")
-      .trim();
-  }
+  const veriphoneKeys = await loadRotatingKeys(
+    admin,
+    user.id,
+    profile?.veriphone_api_key || null,
+    Deno.env.get("VERIPHONE_API_KEY") || null,
+  );
 
   const { data: leads, error: leadsError } = await admin
     .from("leads")
@@ -298,6 +457,7 @@ Deno.serve(async (req: Request) => {
     veriphone: 0,
     localOnly: 0,
     ambiguous: 0,
+    configuredKeys: veriphoneKeys.length,
   };
 
   const results: Array<Record<string, unknown>> = [];
@@ -308,7 +468,7 @@ Deno.serve(async (req: Request) => {
     const wave = source.slice(offset, offset + 5);
 
     const waveResults = await Promise.all(
-      wave.map(async (lead: any) => {
+      wave.map(async (lead: any, waveIndex: number) => {
         const rawPhone = lead.whatsapp_numero || lead.telefone_original;
         const local = localAnalyze(rawPhone);
 
@@ -342,16 +502,22 @@ Deno.serve(async (req: Request) => {
         let finalResult = local;
         let lookupStatus = "local";
 
-        if (veriphoneKey) {
-          const remote = await lookupVeriphone(local.e164, veriphoneKey);
+        if (veriphoneKeys.length > 0) {
+          const startIndex = (offset + waveIndex) % veriphoneKeys.length;
+          const remote = await lookupVeriphoneRotating(
+            local.e164,
+            veriphoneKeys,
+            startIndex,
+            admin,
+          );
 
           if (remote.ok) {
             finalResult = remote;
             lookupStatus = "verified";
             summary.veriphone++;
           } else {
-            // Free quota exhausted / provider unavailable: keep the local result
-            // and do not fall back to any paid service.
+            // If every available free key is exhausted/unavailable, preserve
+            // the local result instead of falling back to any paid service.
             summary.localOnly++;
             finalResult = {
               ...local,
@@ -407,18 +573,18 @@ Deno.serve(async (req: Request) => {
 
     results.push(...waveResults);
 
-    if (veriphoneKey && offset + 5 < source.length) {
+    if (veriphoneKeys.length > 0 && offset + 5 < source.length) {
       await sleep(150);
     }
   }
 
   return json(200, {
     success: true,
-    mode: veriphoneKey ? "free_veriphone_plus_local" : "local_only",
+    mode: veriphoneKeys.length > 0 ? "free_veriphone_rotating_plus_local" : "local_only",
     summary,
     results,
-    notice: veriphoneKey
-      ? "Verificação gratuita: Veriphone (modo static) + libphonenumber. Nenhum fallback pago é utilizado."
-      : "VERIPHONE_API_KEY não configurada: somente libphonenumber local foi utilizado. Nos EUA, ele não confirma com segurança se uma linha é móvel nem se recebe SMS.",
+    notice: veriphoneKeys.length > 0
+      ? `Verificação gratuita com rotação automática entre ${veriphoneKeys.length} chave(s) Veriphone (modo static) + libphonenumber. Nenhum fallback pago é utilizado.`
+      : "Nenhuma chave Veriphone configurada: somente libphonenumber local foi utilizado. Nos EUA, ele não confirma com segurança se uma linha é móvel nem se recebe SMS.",
   });
 });
