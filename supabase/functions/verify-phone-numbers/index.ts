@@ -249,13 +249,29 @@ Deno.serve(async (req: Request) => {
 
   // Free-only mode:
   // 1) libphonenumber runs locally and consumes no API credits.
-  // 2) Veriphone standard lookup is used only when VERIPHONE_API_KEY is configured.
-  //    The standard lookup consumes the provider's free monthly credits. We never
-  //    call mode=current here, so this function will not intentionally use paid
-  //    Current Carrier Lookup credits.
-  const veriphoneKey = Deno.env.get("VERIPHONE_API_KEY");
-
+  // 2) Veriphone standard lookup uses the API key saved in the user's profile first.
+  // 3) If the user has not configured one, the project Secret VERIPHONE_API_KEY is
+  //    used as a fallback. This lets the user switch Veriphone accounts from Settings
+  //    without editing Supabase Secrets or redeploying the Edge Function.
+  // 4) We only call mode=static here; no paid Current Carrier Lookup fallback is used.
   const admin = createClient(supabaseUrl, serviceRole);
+
+  let veriphoneKey: string | null = null;
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("veriphone_api_key")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  veriphoneKey = profile?.veriphone_api_key || Deno.env.get("VERIPHONE_API_KEY") || null;
+
+  if (veriphoneKey) {
+    veriphoneKey = String(veriphoneKey)
+      .trim()
+      .replace(/^Bearer\\s+/i, "")
+      .replace(/^[\"']|[\"']$/g, "")
+      .trim();
+  }
 
   const { data: leads, error: leadsError } = await admin
     .from("leads")
