@@ -67,7 +67,7 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
   const [searchType, setSearchType] = useState<SearchType>('empresas');
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
-  const [maxResults, setMaxResults] = useState(100);
+  const [maxResults, setMaxResults] = useState(1000);
   const [apiProvider, setApiProvider] = useState<'apify' | 'mock'>('apify');
   const [websiteFilter, setWebsiteFilter] = useState<'all' | 'without'>('all');
 
@@ -179,10 +179,27 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
             value={[maxResults]}
             onValueChange={(value) => setMaxResults(value[0])}
             min={100}
-            max={5000}
+            max={10000}
             step={100}
             className="mt-3"
           />
+          <Input
+            type="number"
+            min={100}
+            max={10000}
+            step={100}
+            value={maxResults}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              if (Number.isFinite(value)) {
+                setMaxResults(Math.min(10000, Math.max(100, value)));
+              }
+            }}
+            className="mt-2"
+          />
+          <p className="text-xs text-muted-foreground">
+            Até 10.000 por extração. Os leads anteriores continuam acumulados.
+          </p>
         </div>
 
         {/* Filtro de website (Google Maps) */}
