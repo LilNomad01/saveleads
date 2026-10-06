@@ -22,6 +22,12 @@ export interface Lead {
   user_id: string | null;
   mensagem_enviada: boolean | null;
   data_mensagem_enviada: string | null;
+  phone_line_type: string | null;
+  phone_carrier: string | null;
+  phone_valid: boolean | null;
+  phone_lookup_status: string;
+  phone_lookup_error: string | null;
+  phone_verified_at: string | null;
 }
 
 export interface LeadsStats {
@@ -37,6 +43,7 @@ export function useLeads() {
   const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isVerifyingPhones, setIsVerifyingPhones] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchLeads = useCallback(async () => {
@@ -134,6 +141,58 @@ export function useLeads() {
       return false;
     }
   }, [user]);
+
+  const verifyPhoneNumbers = useCallback(async (leadIds: string[]) => {
+    if (!user || leadIds.length === 0) return false;
+
+    const uniqueIds = Array.from(new Set(leadIds));
+    const chunks: string[][] = [];
+    for (let i = 0; i < uniqueIds.length; i += 25) {
+      chunks.push(uniqueIds.slice(i, i + 25));
+    }
+
+    setIsVerifyingPhones(true);
+
+    let mobile = 0;
+    let landline = 0;
+    let voip = 0;
+    let invalid = 0;
+    let errors = 0;
+
+    try {
+      for (let i = 0; i < chunks.length; i++) {
+        const { data, error: invokeError } = await supabase.functions.invoke('verify-phone-numbers', {
+          body: { leadIds: chunks[i] },
+        });
+
+        if (invokeError) throw invokeError;
+        if (!data?.success) throw new Error(data?.error || 'Falha ao verificar telefones');
+
+        mobile += Number(data?.summary?.mobile || 0);
+        landline += Number(data?.summary?.landline || 0);
+        voip += Number(data?.summary?.voip || 0);
+        invalid += Number(data?.summary?.invalid || 0);
+        errors += Number(data?.summary?.errors || 0);
+
+        if (chunks.length > 1) {
+          toast.info(`Verificação: lote ${i + 1}/${chunks.length} concluído`);
+        }
+      }
+
+      await fetchLeads();
+
+      toast.success(
+        `Verificação concluída: ${mobile} móveis, ${landline} fixos, ${voip} VoIP, ${invalid} inválidos${errors ? `, ${errors} erros` : ''}.`
+      );
+      return true;
+    } catch (err: any) {
+      console.error('Error verifying phone numbers:', err);
+      toast.error(err?.message || 'Erro ao verificar telefones');
+      return false;
+    } finally {
+      setIsVerifyingPhones(false);
+    }
+  }, [user, fetchLeads]);
 
   const getStats = useCallback((): LeadsStats => {
     const now = new Date();
@@ -244,6 +303,8 @@ export function useLeads() {
     updateLeadStatus,
     markMessageSent,
     getStats,
-    extractPhoneNumbers
+    extractPhoneNumbers,
+    verifyPhoneNumbers,
+    isVerifyingPhones
   };
 }
