@@ -55,14 +55,39 @@ export function useLeads() {
     setError(null);
     
     try {
-      const { data, error: fetchError } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (fetchError) throw fetchError;
-      setLeads(data || []);
+      // Supabase/PostgREST commonly limits a single response to 1,000 rows.
+      // Load in pages so leads from older extractions never disappear from the frontend.
+      const PAGE_SIZE = 1000;
+      const allLeads: Lead[] = [];
+      let from = 0;
+
+      while (true) {
+        const { data, error: fetchError } = await supabase
+          .from('leads')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, from + PAGE_SIZE - 1);
+
+        if (fetchError) throw fetchError;
+
+        const page = (data || []) as Lead[];
+        allLeads.push(...page);
+
+        if (page.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+
+        // Safety guard: supports up to 100,000 leads in one account load.
+        if (from >= 100000) break;
+      }
+
+      // Defensive de-duplication by database id in case rows change while pages load.
+      const uniqueLeads = Array.from(
+        new Map(allLeads.map((lead) => [lead.id, lead])).values()
+      );
+
+      setLeads(uniqueLeads);
     } catch (err: any) {
       setError(err.message);
       console.error('Error fetching leads:', err);
