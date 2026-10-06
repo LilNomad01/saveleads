@@ -73,7 +73,7 @@ const toWebsiteHref = (site: string) => {
 };
 
 const getLeadPhoneType = (lead: Lead): PhoneType => {
-  if (lead.phone_lookup_status === 'verified') {
+  if (lead.phone_lookup_status === 'verified' || lead.phone_lookup_status === 'local') {
     return phoneTypeFromLookup(
       lead.phone_line_type,
       lead.phone_lookup_status,
@@ -109,7 +109,7 @@ const getLeadPhoneTypeLabel = (lead: Lead) => {
   const type = getLeadPhoneType(lead);
   if (type === 'mobile') {
     if (lead.phone_lookup_status === 'verified' && lead.phone_lookup_provider === 'veriphone') {
-      return 'Móvel verificado';
+      return 'Móvel (Veriphone)';
     }
     if (lead.phone_lookup_status === 'local') return 'Móvel (estimado)';
     return 'Móvel';
