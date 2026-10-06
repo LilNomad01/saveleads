@@ -27,6 +27,7 @@ export interface Lead {
   phone_valid: boolean | null;
   phone_lookup_status: string;
   phone_lookup_error: string | null;
+  phone_lookup_provider: string | null;
   phone_verified_at: string | null;
 }
 
@@ -158,6 +159,9 @@ export function useLeads() {
     let voip = 0;
     let invalid = 0;
     let errors = 0;
+    let localOnly = 0;
+    let veriphone = 0;
+    let ambiguous = 0;
 
     try {
       for (let i = 0; i < chunks.length; i++) {
@@ -173,6 +177,9 @@ export function useLeads() {
         voip += Number(data?.summary?.voip || 0);
         invalid += Number(data?.summary?.invalid || 0);
         errors += Number(data?.summary?.errors || 0);
+        localOnly += Number(data?.summary?.localOnly || 0);
+        veriphone += Number(data?.summary?.veriphone || 0);
+        ambiguous += Number(data?.summary?.ambiguous || 0);
 
         if (chunks.length > 1) {
           toast.info(`Verificação: lote ${i + 1}/${chunks.length} concluído`);
@@ -181,8 +188,12 @@ export function useLeads() {
 
       await fetchLeads();
 
+      const providerText = veriphone > 0
+        ? `${veriphone} via Veriphone grátis`
+        : `${localOnly} via libphonenumber local`;
+
       toast.success(
-        `Verificação concluída: ${mobile} móveis, ${landline} fixos, ${voip} VoIP, ${invalid} inválidos${errors ? `, ${errors} erros` : ''}.`
+        `Verificação grátis concluída: ${mobile} móveis, ${landline} fixos, ${voip} VoIP, ${invalid} inválidos${ambiguous ? `, ${ambiguous} tipos incertos` : ''}${errors ? `, ${errors} erros` : ''}. ${providerText}.`
       );
       return true;
     } catch (err: any) {
