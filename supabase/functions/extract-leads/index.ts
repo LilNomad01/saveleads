@@ -645,6 +645,7 @@ serve(async (req) => {
             whatsapp_numero: whatsappNumero,
             site: String(place.website || '').trim(),
             endereco: place.address || place.street || '',
+            cidade: location || searchContext.locationQuery || '',
             categoria: place.categoryName || keyword,
             avaliacao: place.totalScore || place.rating || null,
             total_avaliacoes: place.reviewsCount || place.reviews || 0,
