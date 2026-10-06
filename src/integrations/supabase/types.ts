@@ -268,6 +268,7 @@ export type Database = {
       profiles: {
         Row: {
           apify_api_token: string | null
+          veriphone_api_key: string | null
           created_at: string
           full_name: string | null
           id: string
@@ -277,6 +278,7 @@ export type Database = {
         }
         Insert: {
           apify_api_token?: string | null
+          veriphone_api_key?: string | null
           created_at?: string
           full_name?: string | null
           id?: string
@@ -286,6 +288,7 @@ export type Database = {
         }
         Update: {
           apify_api_token?: string | null
+          veriphone_api_key?: string | null
           created_at?: string
           full_name?: string | null
           id?: string
