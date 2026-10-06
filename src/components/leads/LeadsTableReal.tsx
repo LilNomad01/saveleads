@@ -104,14 +104,21 @@ const isLeadVerifiedMobile = (lead: Lead) => {
 const getLeadPhoneTypeLabel = (lead: Lead) => {
   if (!lead.whatsapp_numero) return 'Sem telefone';
   if (lead.phone_lookup_status === 'error') return 'Erro no lookup';
-  if (lead.phone_lookup_status === 'verified' && lead.phone_valid === false) return 'Inválido';
+  if (['verified', 'local'].includes(lead.phone_lookup_status) && lead.phone_valid === false) return 'Inválido';
 
   const type = getLeadPhoneType(lead);
   if (type === 'mobile') {
-    return lead.phone_lookup_status === 'verified' ? 'Móvel verificado' : 'Móvel';
+    if (lead.phone_lookup_status === 'verified' && lead.phone_lookup_provider === 'veriphone') {
+      return 'Móvel verificado';
+    }
+    if (lead.phone_lookup_status === 'local') return 'Móvel (estimado)';
+    return 'Móvel';
   }
-  if (type === 'landline') return 'Fixo';
-  if (type === 'voip') return 'VoIP';
+  if (type === 'landline') return lead.phone_lookup_status === 'local' ? 'Fixo (estimado)' : 'Fixo';
+  if (type === 'voip') return lead.phone_lookup_status === 'local' ? 'VoIP (estimado)' : 'VoIP';
+
+  if (lead.phone_lookup_status === 'local') return 'Tipo incerto (local)';
+  if (lead.phone_lookup_status === 'verified') return 'Tipo incerto';
 
   return 'Não verificado';
 };
@@ -144,8 +151,8 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
         if (!matchesSearch) return false;
       }
 
-      // Phone type filter. US/international numbers are never guessed by length:
-      // they must be verified by Twilio Lookup.
+      // Phone type filter. US/international numbers are never guessed by length.
+      // Veriphone can verify line type; libphonenumber is only a free local fallback.
       if (filters.phoneType !== 'all') {
         const phoneType = getLeadPhoneType(lead);
         if (filters.phoneType === 'mobile' && phoneType !== 'mobile') return false;
@@ -210,7 +217,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
     setSelectedLeads(new Set(mobileLeads.map(l => l.id)));
 
     if (mobileLeads.length === 0) {
-      toast.info('Nenhum móvel verificado. Selecione os leads e clique em Verificar SMS primeiro.');
+      toast.info('Nenhum móvel verificado. Selecione os leads e clique em Verificar grátis primeiro.');
       return;
     }
 
@@ -248,7 +255,8 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
         'Telefone': l.whatsapp_numero ? `+${l.whatsapp_numero}` : '',
         'Tipo': getLeadPhoneTypeLabel(l),
         'Operadora': l.phone_carrier || '',
-        'Verificado': l.phone_lookup_status === 'verified' ? 'Sim' : 'Não',
+        'Fonte da verificação': l.phone_lookup_provider || '',
+        'Verificado': l.phone_lookup_status === 'verified' ? 'Sim' : l.phone_lookup_status === 'local' ? 'Somente formato local' : 'Não',
         'WhatsApp Link': mobile ? `https://wa.me/${l.whatsapp_numero}` : '',
       };
     });
@@ -272,6 +280,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
       'Empresa': l.nome_empresa,
       'Telefone': `+${l.whatsapp_numero}`,
       'Operadora': l.phone_carrier || '',
+      'Fonte da verificação': l.phone_lookup_provider || '',
       'Tipo': 'Móvel verificado',
     }));
 
@@ -409,7 +418,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                   className="flex-1 text-xs"
                 >
                   {isVerifyingPhones ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
-                  Verificar SMS
+                  Verificar grátis
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -464,7 +473,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                   disabled={selectedLeads.size === 0 || isVerifyingPhones}
                 >
                   {isVerifyingPhones ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                  {isVerifyingPhones ? 'Verificando...' : 'Verificar SMS'}
+                  {isVerifyingPhones ? 'Verificando...' : 'Verificar grátis'}
                 </Button>
                 <Button 
                   variant="outline" 
@@ -695,9 +704,9 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                           >
                             {getLeadPhoneTypeLabel(lead)}
                           </Badge>
-                          {lead.phone_carrier && (
-                            <span className="text-[11px] text-muted-foreground max-w-[150px] truncate">
-                              {lead.phone_carrier}
+                          {(lead.phone_carrier || lead.phone_lookup_provider) && (
+                            <span className="text-[11px] text-muted-foreground max-w-[170px] truncate">
+                              {lead.phone_carrier || (lead.phone_lookup_provider === 'veriphone' ? 'Veriphone grátis' : 'libphonenumber local')}
                             </span>
                           )}
                         </div>
