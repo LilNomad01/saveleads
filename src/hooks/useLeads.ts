@@ -11,6 +11,7 @@ export interface Lead {
   site: string | null;
   endereco: string | null;
   cidade: string | null;
+  extraction_session_id: string | null;
   categoria: string | null;
   avaliacao: number | null;
   total_avaliacoes: number | null;
@@ -98,21 +99,41 @@ export function useLeads() {
 
   const deleteLeads = useCallback(async (leadIds: string[]) => {
     if (!user || leadIds.length === 0) return false;
-    
+
+    const uniqueIds = Array.from(new Set(leadIds));
+    const CHUNK_SIZE = 100;
+    const deletedIds = new Set<string>();
+
     try {
-      const { error: deleteError } = await supabase
-        .from('leads')
-        .delete()
-        .in('id', leadIds)
-        .eq('user_id', user.id);
-      
-      if (deleteError) throw deleteError;
-      
-      setLeads(prev => prev.filter(lead => !leadIds.includes(lead.id)));
-      toast.success(`${leadIds.length} lead(s) excluído(s) com sucesso!`);
+      for (let i = 0; i < uniqueIds.length; i += CHUNK_SIZE) {
+        const chunk = uniqueIds.slice(i, i + CHUNK_SIZE);
+
+        const { error: deleteError } = await supabase
+          .from('leads')
+          .delete()
+          .in('id', chunk)
+          .eq('user_id', user.id);
+
+        if (deleteError) throw deleteError;
+
+        chunk.forEach((id) => deletedIds.add(id));
+
+        if (uniqueIds.length > CHUNK_SIZE && (i / CHUNK_SIZE) % 5 === 4) {
+          toast.info(`Excluindo leads... ${Math.min(i + CHUNK_SIZE, uniqueIds.length)}/${uniqueIds.length}`);
+        }
+      }
+
+      setLeads(prev => prev.filter(lead => !deletedIds.has(lead.id)));
+      toast.success(`${deletedIds.size} lead(s) excluído(s) com sucesso!`);
       return true;
     } catch (err: any) {
-      toast.error('Erro ao excluir leads: ' + err.message);
+      // Reflect successful chunks immediately even if a later chunk fails.
+      if (deletedIds.size > 0) {
+        setLeads(prev => prev.filter(lead => !deletedIds.has(lead.id)));
+      }
+      toast.error(
+        `Erro ao excluir leads após ${deletedIds.size}/${uniqueIds.length}: ${err.message}`
+      );
       return false;
     }
   }, [user]);
