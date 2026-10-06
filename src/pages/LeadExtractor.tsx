@@ -19,6 +19,13 @@ import { useExtractionLogs } from "@/hooks/useExtractionLogs";
 import { useExtractionSessions } from "@/hooks/useExtractionSessions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function LeadExtractor() {
   const { leads, isLoading: isLoadingLeads, deleteLeads, extractPhoneNumbers, verifyPhoneNumbers, isVerifyingPhones, refetch: refetchLeads } = useLeads();
@@ -66,6 +73,10 @@ export default function LeadExtractor() {
   const visibleGoogleMapsLeads = selectedExtractionId
     ? leads.filter((lead) => lead.extraction_session_id === selectedExtractionId)
     : leads;
+  const completedGoogleMapsExtractions = extractionSessions.filter(
+    (session) => session.source === 'google_maps' && session.status === 'completed'
+  );
+  const latestExtraction = completedGoogleMapsExtractions[0] || null;
   const selectedExtraction = selectedExtractionId
     ? extractionSessions.find((session) => session.id === selectedExtractionId) || null
     : null;
@@ -134,6 +145,56 @@ export default function LeadExtractor() {
           </TabsList>
 
           <TabsContent value="google_maps" className="space-y-3">
+            <div className="rounded-lg border bg-card p-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-sm font-semibold">Filtrar por extração</p>
+                  <p className="text-xs text-muted-foreground">
+                    Mostre somente a última extração ou escolha qualquer lote específico.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!latestExtraction}
+                    onClick={() => latestExtraction && setSelectedExtractionId(latestExtraction.id)}
+                  >
+                    Última extração
+                    {latestExtraction ? ` (#${latestExtraction.extraction_number})` : ''}
+                  </Button>
+
+                  <Select
+                    value={selectedExtractionId || 'all'}
+                    onValueChange={(value) => setSelectedExtractionId(value === 'all' ? null : value)}
+                  >
+                    <SelectTrigger className="w-full sm:w-[330px]">
+                      <SelectValue placeholder="Selecionar extração específica" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os leads</SelectItem>
+                      {completedGoogleMapsExtractions.map((session) => (
+                        <SelectItem key={session.id} value={session.id}>
+                          #{session.extraction_number} • {session.query} • {session.location || 'Sem localização'} • {session.leads_count} leads
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    type="button"
+                    variant={!selectedExtractionId ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedExtractionId(null)}
+                  >
+                    Todos
+                  </Button>
+                </div>
+              </div>
+            </div>
+
             {selectedExtraction && (
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
