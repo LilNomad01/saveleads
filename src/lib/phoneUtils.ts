@@ -6,7 +6,7 @@ export type PhoneType = 'mobile' | 'landline' | 'voip' | 'unknown';
  * Conservative local heuristic.
  *
  * IMPORTANT: number length alone cannot identify US mobile vs landline.
- * For US/international leads, use the persisted Twilio Lookup result instead.
+ * For US/international leads, use the persisted lookup result instead.
  * This helper only classifies Brazilian numbers when +55 is present.
  */
 export function detectPhoneType(phoneNumber: string | null | undefined): PhoneType {
@@ -37,7 +37,7 @@ export function phoneTypeFromLookup(
   lookupStatus: string | null | undefined,
   valid: boolean | null | undefined,
 ): PhoneType {
-  if (lookupStatus !== 'verified' || valid === false) return 'unknown';
+  if (!['verified', 'local'].includes(String(lookupStatus || '')) || valid === false) return 'unknown';
 
   if (lineType === 'mobile') return 'mobile';
   if (lineType === 'landline') return 'landline';
@@ -84,7 +84,7 @@ export function formatWhatsAppLink(phoneNumber: string | null | undefined): stri
 
 /**
  * Local WhatsApp compatibility fallback.
- * For US/international leads, prefer isVerifiedMobile() with Twilio Lookup data.
+ * For US/international leads, prefer a verified line-type provider.
  */
 export function isWhatsAppCompatible(phoneNumber: string | null | undefined): boolean {
   return detectPhoneType(phoneNumber) === 'mobile';
