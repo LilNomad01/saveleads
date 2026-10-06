@@ -37,6 +37,122 @@ async function validateApifyToken(token: string): Promise<{ valid: boolean; user
   return { valid: true, username: 'token configurado' };
 }
 
+type RotatingApiKey = {
+  id: string | null;
+  key: string;
+  label: string;
+  source: 'pool' | 'legacy' | 'env';
+};
+
+function normalizeApiKey(raw: string | null | undefined): string {
+  return String(raw || '')
+    .trim()
+    .replace(/^Bearer\s+/i, '')
+    .replace(/^["']|["']$/g, '')
+    .trim();
+}
+
+async function loadRotatingKeys(
+  supabase: any,
+  userId: string | undefined,
+  provider: 'apify' | 'veriphone',
+  legacyKey?: string | null,
+  envKey?: string | null,
+): Promise<RotatingApiKey[]> {
+  const keys: RotatingApiKey[] = [];
+  const seen = new Set<string>();
+
+  if (userId) {
+    const { data, error } = await supabase
+      .from('api_keys')
+      .select('id, key_value, label, disabled_until')
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .eq('is_active', true)
+      .order('last_used_at', { ascending: true, nullsFirst: true })
+      .order('priority', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error(`[extract-leads] Failed to load ${provider} key pool: ${error.message}`);
+    } else {
+      const now = Date.now();
+      for (const row of data || []) {
+        if (row.disabled_until && new Date(row.disabled_until).getTime() > now) continue;
+        const key = normalizeApiKey(row.key_value);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        keys.push({
+          id: row.id,
+          key,
+          label: row.label || `${provider} key`,
+          source: 'pool',
+        });
+      }
+    }
+  }
+
+  const normalizedLegacy = normalizeApiKey(legacyKey);
+  if (normalizedLegacy && !seen.has(normalizedLegacy)) {
+    seen.add(normalizedLegacy);
+    keys.push({
+      id: null,
+      key: normalizedLegacy,
+      label: `${provider} legacy`,
+      source: 'legacy',
+    });
+  }
+
+  const normalizedEnv = normalizeApiKey(envKey);
+  if (normalizedEnv && !seen.has(normalizedEnv)) {
+    keys.push({
+      id: null,
+      key: normalizedEnv,
+      label: `${provider} fallback`,
+      source: 'env',
+    });
+  }
+
+  return keys;
+}
+
+async function markPoolKeyUsed(supabase: any, key: RotatingApiKey) {
+  if (!key.id) return;
+  await supabase
+    .from('api_keys')
+    .update({
+      last_used_at: new Date().toISOString(),
+      last_error: null,
+      disabled_until: null,
+    })
+    .eq('id', key.id);
+}
+
+async function markPoolKeyFailed(supabase: any, key: RotatingApiKey, message: string) {
+  if (!key.id) return;
+
+  const lower = message.toLowerCase();
+  const cooldownMinutes =
+    lower.includes('429') || lower.includes('rate') ? 15 :
+    lower.includes('401') || lower.includes('unauthorized') ? 24 * 60 :
+    lower.includes('402') || lower.includes('credit') || lower.includes('crédit') || lower.includes('quota') ? 12 * 60 :
+    lower.includes('403') || lower.includes('forbidden') ? 6 * 60 :
+    60;
+
+  await supabase
+    .from('api_keys')
+    .update({
+      last_error: message.slice(0, 500),
+      disabled_until: new Date(Date.now() + cooldownMinutes * 60_000).toISOString(),
+    })
+    .eq('id', key.id);
+}
+
+function shouldRotateApiKey(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /(HTTP\s*(401|402|403|429)|unauthori[sz]ed|forbidden|rate\s*limit|quota|credit|crédit|insufficient|token.*invalid|invalid.*token)/i.test(message);
+}
+
 async function runApifyActor(
   actorId: string,
   input: Record<string, unknown>,
@@ -117,6 +233,67 @@ async function runApifyActor(
   const results = await dataRes.json();
   console.log(`[extract-leads] ${label} returned ${Array.isArray(results) ? results.length : 0} items`);
   return Array.isArray(results) ? results : [];
+}
+
+async function runApifyActorRotating(
+  actorId: string,
+  input: Record<string, unknown>,
+  keys: RotatingApiKey[],
+  supabase: any,
+  sessionId: string,
+  label: string,
+  maxPollAttempts = 120,
+): Promise<any[]> {
+  if (keys.length === 0) {
+    throw new Error('Nenhuma API key Apify ativa disponível.');
+  }
+
+  let lastError: unknown = null;
+
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index];
+
+    if (index > 0) {
+      await logToSession(
+        supabase,
+        sessionId,
+        'warning',
+        `🔄 Rotação automática: tentando a próxima chave Apify (${index + 1}/${keys.length}).`
+      );
+    }
+
+    try {
+      const results = await runApifyActor(
+        actorId,
+        input,
+        key.key,
+        supabase,
+        sessionId,
+        label,
+        maxPollAttempts,
+      );
+
+      await markPoolKeyUsed(supabase, key);
+      return results;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (!shouldRotateApiKey(error) || index === keys.length - 1) {
+        throw error;
+      }
+
+      await markPoolKeyFailed(supabase, key, message);
+      await logToSession(
+        supabase,
+        sessionId,
+        'warning',
+        `⚠️ Chave Apify indisponível (${message.slice(0, 140)}). Alternando sem interromper a extração.`
+      );
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Falha nas chaves Apify'));
 }
 
 function tryParseJSON(text: string): any {
@@ -474,67 +651,51 @@ serve(async (req) => {
 
     // =================== APIFY MODE ===================
     } else if (apiProvider === 'apify') {
-      // Get token: user profile first, then env fallback
-      let apifyKey: string | null = null;
+      // Load all active Apify keys. The legacy profile key and project Secret stay as fallbacks.
+      let legacyApifyKey: string | null = null;
       if (userId) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('apify_api_token')
           .eq('user_id', userId)
-          .single();
-        apifyKey = profile?.apify_api_token || null;
-        console.log(`[extract-leads] User token from profile: ${!!apifyKey}`);
-      }
-      if (!apifyKey) {
-        apifyKey = Deno.env.get('APIFY_API_KEY') || null;
-        console.log(`[extract-leads] Fallback to env APIFY_API_KEY: ${!!apifyKey}`);
+          .maybeSingle();
+        legacyApifyKey = profile?.apify_api_token || null;
       }
 
-      if (apifyKey) {
-        apifyKey = String(apifyKey).trim().replace(/^Bearer\s+/i, '').replace(/^[\"']|[\"']$/g, '').trim();
-      }
+      const apifyKeys = await loadRotatingKeys(
+        supabase,
+        userId,
+        'apify',
+        legacyApifyKey,
+        Deno.env.get('APIFY_API_KEY') || null,
+      );
 
-      if (!apifyKey) {
-        await logToSession(supabase, sessionId, 'error', '❌ Token Apify não configurado. Vá em Configurações e insira seu token.');
+      if (apifyKeys.length === 0) {
+        await logToSession(supabase, sessionId, 'error', '❌ Nenhuma chave Apify ativa configurada.');
         await updateExtractionSession(supabase, sessionId, userId, {
           status: 'error',
           completed_at: new Date().toISOString(),
         });
-        return errorResponse('Token Apify não configurado', 'Nenhum token encontrado no perfil do usuário nem nas variáveis de ambiente. Configure em Configurações > API Token Apify.');
-      }
-
-      // Validate token
-      console.log(`[extract-leads] Validating Apify token...`);
-      const tokenValidation = await validateApifyToken(apifyKey);
-      if (!tokenValidation.valid) {
-        console.error(`[extract-leads] Token validation failed: ${tokenValidation.error}`);
-
-        if (tokenValidation.status === 401) {
-          await logToSession(supabase, sessionId, 'error', `❌ Token Apify rejeitado (401): ${tokenValidation.error}`);
-          return errorResponse(
-            'Token Apify rejeitado',
-            'A Apify respondeu 401. Copie novamente o Personal API token em Settings > API & Integrations.'
-          );
-        }
-
-        await logToSession(
-          supabase,
-          sessionId,
-          'warning',
-          `⚠️ Não foi possível pré-validar o token (${tokenValidation.error}). Tentando o Actor diretamente...`
+        return errorResponse(
+          'Nenhuma chave Apify disponível',
+          'Adicione uma ou mais chaves em Configurações > Rotação automática de API Keys.'
         );
-      } else {
-        console.log(`[extract-leads] Token accepted/pre-accepted: ${tokenValidation.username}`);
-        await logToSession(supabase, sessionId, 'info', `🔑 Token Apify carregado (${tokenValidation.username})`);
       }
+
+      await logToSession(
+        supabase,
+        sessionId,
+        'info',
+        `🔑 Pool Apify carregado: ${apifyKeys.length} chave(s) disponível(is) para rotação automática.`
+      );
 
       // ---- TELEGRAM ----
       if (source === 'telegram') {
         await logToSession(supabase, sessionId, 'info', '🔗 Conectando ao Telegram Scraper (Apify)...');
-        const results = await runApifyActor(
+        const results = await runApifyActorRotating(
           'dainty_screw~telegram-scraper',
           { channels: [keyword.replace(/\s+/g, '').toLowerCase()], maxPostsPerChannel: maxResults || 100, maxCommentsPerPost: 0 },
-          apifyKey, supabase, sessionId, 'Telegram Scraper', 60
+          apifyKeys, supabase, sessionId, 'Telegram Scraper', 60
         );
 
         const telegramLeads = results.map((item: any) => ({
@@ -567,10 +728,10 @@ serve(async (req) => {
           ? `https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(keyword)}`
           : `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keyword)}`;
 
-        const results = await runApifyActor(
+        const results = await runApifyActorRotating(
           actorId,
           { searchUrls: [searchUrl], maxResults: maxResults || 100 },
-          apifyKey, supabase, sessionId, 'LinkedIn Scraper', 120
+          apifyKeys, supabase, sessionId, 'LinkedIn Scraper', 120
         );
 
         const linkedinLeads = results.map((item: any) => ({
@@ -599,7 +760,7 @@ serve(async (req) => {
       // ---- GOOGLE REVIEWS ----
       } else if (source === 'google_reviews') {
         await logToSession(supabase, sessionId, 'info', '🔗 Conectando ao Google Reviews Scraper (Apify)...');
-        const results = await runApifyActor(
+        const results = await runApifyActorRotating(
           'compass~crawler-google-places',
           {
             searchStringsArray: [keyword],
@@ -612,7 +773,7 @@ serve(async (req) => {
             reviewsSort: 'lowest_rating',
             maxReviews: 5,
           },
-          apifyKey, supabase, sessionId, 'Google Reviews Scraper', 60
+          apifyKeys, supabase, sessionId, 'Google Reviews Scraper', 60
         );
 
         const reviewLeads: any[] = [];
@@ -659,7 +820,7 @@ serve(async (req) => {
             ? `🔗 Conectando ao Google Maps Scraper (Apify)... buscando até ${crawlLimit} empresas para encontrar ${maxResults} sem site.`
             : '🔗 Conectando ao Google Maps Scraper (Apify)...'
         );
-        const results = await runApifyActor(
+        const results = await runApifyActorRotating(
           'compass~crawler-google-places',
           {
             searchStringsArray: [keyword],
@@ -669,7 +830,7 @@ serve(async (req) => {
             deeperCityScrape: true,
             skipClosedPlaces: true,
           },
-          apifyKey, supabase, sessionId, 'Google Maps Scraper', 120
+          apifyKeys, supabase, sessionId, 'Google Maps Scraper', 120
         );
 
         // IMPORTANTE: place.url é a URL da ficha no Google Maps, não o site da empresa.
