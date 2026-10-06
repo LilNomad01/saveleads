@@ -18,7 +18,7 @@ import { useExtractionLogs } from "@/hooks/useExtractionLogs";
 import { Badge } from "@/components/ui/badge";
 
 export default function LeadExtractor() {
-  const { leads, isLoading: isLoadingLeads, deleteLeads, extractPhoneNumbers } = useLeads();
+  const { leads, isLoading: isLoadingLeads, deleteLeads, extractPhoneNumbers, verifyPhoneNumbers, isVerifyingPhones } = useLeads();
   const { leads: telegramLeads, isLoading: isLoadingTelegram, deleteLeads: deleteTelegramLeads } = useTelegramLeads();
   const { leads: linkedinLeads, isLoading: isLoadingLinkedin, deleteLeads: deleteLinkedinLeads } = useLinkedinLeads();
   const { leads: reviewsLeads, isLoading: isLoadingReviews, deleteLeads: deleteReviewsLeads } = useReviewsLeads();
@@ -115,6 +115,8 @@ export default function LeadExtractor() {
               isLoading={isLoadingLeads} 
               onDelete={deleteLeads}
               onExtractPhones={extractPhoneNumbers}
+              onVerifyPhones={verifyPhoneNumbers}
+              isVerifyingPhones={isVerifyingPhones}
             />
           </TabsContent>
 
