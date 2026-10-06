@@ -138,6 +138,7 @@ export type Database = {
           phone_carrier: string | null
           phone_line_type: string | null
           phone_lookup_error: string | null
+          phone_lookup_provider: string | null
           phone_lookup_status: string
           phone_valid: boolean | null
           phone_verified_at: string | null
@@ -167,6 +168,7 @@ export type Database = {
           phone_carrier?: string | null
           phone_line_type?: string | null
           phone_lookup_error?: string | null
+          phone_lookup_provider?: string | null
           phone_lookup_status?: string
           phone_valid?: boolean | null
           phone_verified_at?: string | null
