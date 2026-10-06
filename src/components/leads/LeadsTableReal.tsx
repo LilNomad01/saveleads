@@ -253,6 +253,9 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
       return {
         'Empresa': l.nome_empresa,
         'Telefone': l.whatsapp_numero ? `+${l.whatsapp_numero}` : '',
+        'Cidade': l.cidade || '',
+        'Endereço': l.endereco || '',
+        'Categoria': l.categoria || '',
         'Tipo': getLeadPhoneTypeLabel(l),
         'Operadora': l.phone_carrier || '',
         'Fonte da verificação': l.phone_lookup_provider || '',
@@ -279,6 +282,9 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
     const phoneData = mobileLeads.map(l => ({
       'Empresa': l.nome_empresa,
       'Telefone': `+${l.whatsapp_numero}`,
+      'Cidade': l.cidade || '',
+      'Endereço': l.endereco || '',
+      'Categoria': l.categoria || '',
       'Operadora': l.phone_carrier || '',
       'Fonte da verificação': l.phone_lookup_provider || '',
       'Tipo': 'Móvel verificado',
