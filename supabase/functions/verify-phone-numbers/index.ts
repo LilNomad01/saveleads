@@ -167,8 +167,9 @@ Deno.serve(async (req: Request) => {
   const password = apiSecret || authToken;
 
   if (!username || !password) {
-    return json(503, {
+    return json(200, {
       success: false,
+      code: "TWILIO_NOT_CONFIGURED",
       error:
         "Twilio Lookup não configurado. Adicione TWILIO_API_KEY + TWILIO_API_SECRET (recomendado) ou TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN nos Secrets do Supabase.",
     });
