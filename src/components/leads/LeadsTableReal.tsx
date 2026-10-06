@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Send, Phone, Globe, Star, MapPin, Loader2, Trash2, Copy, Check, FileSpreadsheet, Smartphone, MessageCircle, ExternalLink } from 'lucide-react';
+import { Send, Phone, Globe, Star, MapPin, Loader2, Trash2, Copy, Check, FileSpreadsheet, Smartphone, MessageCircle, ExternalLink, ShieldCheck } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
@@ -34,7 +34,7 @@ import {
 import { Lead } from '@/hooks/useLeads';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { detectPhoneType, getPhoneTypeLabel, formatWhatsAppLink, isWhatsAppCompatible } from '@/lib/phoneUtils';
+import { detectPhoneType, formatWhatsAppLink, phoneTypeFromLookup, isVerifiedMobile, PhoneType } from '@/lib/phoneUtils';
 import { LeadFilters, LeadFiltersState, defaultFilters } from './LeadFilters';
 
 interface LeadsTableRealProps {
@@ -42,6 +42,8 @@ interface LeadsTableRealProps {
   isLoading: boolean;
   onDelete?: (leadIds: string[]) => Promise<boolean>;
   onExtractPhones?: (leadIds: string[]) => string[];
+  onVerifyPhones?: (leadIds: string[]) => Promise<boolean>;
+  isVerifyingPhones?: boolean;
 }
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -70,7 +72,51 @@ const toWebsiteHref = (site: string) => {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 };
 
-export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: LeadsTableRealProps) {
+const getLeadPhoneType = (lead: Lead): PhoneType => {
+  if (lead.phone_lookup_status === 'verified') {
+    return phoneTypeFromLookup(
+      lead.phone_line_type,
+      lead.phone_lookup_status,
+      lead.phone_valid
+    );
+  }
+
+  // Conservative fallback only classifies explicit Brazilian +55 numbers.
+  return detectPhoneType(lead.whatsapp_numero);
+};
+
+const isLeadVerifiedMobile = (lead: Lead) => {
+  if (
+    isVerifiedMobile(
+      lead.phone_line_type,
+      lead.phone_lookup_status,
+      lead.phone_valid
+    )
+  ) {
+    return true;
+  }
+
+  // Keep existing Brazilian workflow working without guessing US numbers.
+  return lead.phone_lookup_status !== 'verified' &&
+    detectPhoneType(lead.whatsapp_numero) === 'mobile';
+};
+
+const getLeadPhoneTypeLabel = (lead: Lead) => {
+  if (!lead.whatsapp_numero) return 'Sem telefone';
+  if (lead.phone_lookup_status === 'error') return 'Erro no lookup';
+  if (lead.phone_lookup_status === 'verified' && lead.phone_valid === false) return 'Inválido';
+
+  const type = getLeadPhoneType(lead);
+  if (type === 'mobile') {
+    return lead.phone_lookup_status === 'verified' ? 'Móvel verificado' : 'Móvel';
+  }
+  if (type === 'landline') return 'Fixo';
+  if (type === 'voip') return 'VoIP';
+
+  return 'Não verificado';
+};
+
+export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, onVerifyPhones, isVerifyingPhones = false }: LeadsTableRealProps) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
@@ -98,11 +144,14 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
         if (!matchesSearch) return false;
       }
 
-      // Phone type filter
+      // Phone type filter. US/international numbers are never guessed by length:
+      // they must be verified by Twilio Lookup.
       if (filters.phoneType !== 'all') {
-        const phoneType = detectPhoneType(lead.whatsapp_numero);
+        const phoneType = getLeadPhoneType(lead);
         if (filters.phoneType === 'mobile' && phoneType !== 'mobile') return false;
         if (filters.phoneType === 'landline' && phoneType !== 'landline') return false;
+        if (filters.phoneType === 'voip' && phoneType !== 'voip') return false;
+        if (filters.phoneType === 'unverified' && lead.phone_lookup_status === 'verified') return false;
         if (filters.phoneType === 'none' && lead.whatsapp_numero) return false;
       }
 
@@ -123,9 +172,19 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
 
   // Stats for filtered results
   const stats = useMemo(() => {
-    const mobileCount = filteredLeads.filter(l => isWhatsAppCompatible(l.whatsapp_numero)).length;
-    const landlineCount = filteredLeads.filter(l => detectPhoneType(l.whatsapp_numero) === 'landline').length;
-    return { total: filteredLeads.length, mobile: mobileCount, landline: landlineCount };
+    const mobileCount = filteredLeads.filter(isLeadVerifiedMobile).length;
+    const landlineCount = filteredLeads.filter(l => getLeadPhoneType(l) === 'landline').length;
+    const voipCount = filteredLeads.filter(l => getLeadPhoneType(l) === 'voip').length;
+    const unverifiedCount = filteredLeads.filter(
+      l => !!l.whatsapp_numero && l.phone_lookup_status !== 'verified'
+    ).length;
+    return {
+      total: filteredLeads.length,
+      mobile: mobileCount,
+      landline: landlineCount,
+      voip: voipCount,
+      unverified: unverifiedCount
+    };
   }, [filteredLeads]);
 
   const toggleLead = (id: string) => {
@@ -147,26 +206,32 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
   };
 
   const selectAllMobile = () => {
-    const mobileLeads = filteredLeads.filter(l => isWhatsAppCompatible(l.whatsapp_numero));
+    const mobileLeads = filteredLeads.filter(isLeadVerifiedMobile);
     setSelectedLeads(new Set(mobileLeads.map(l => l.id)));
-    toast.success(`${mobileLeads.length} leads móveis selecionados!`);
+
+    if (mobileLeads.length === 0) {
+      toast.info('Nenhum móvel verificado. Selecione os leads e clique em Verificar SMS primeiro.');
+      return;
+    }
+
+    toast.success(`${mobileLeads.length} leads móveis verificados selecionados!`);
   };
 
   const selectWithoutWebsite = () => {
     // Seleciona SOMENTE empresas sem site real E com telefone movel/WhatsApp.
     // Exclui telefone fixo e empresas sem numero movel.
     const leadsWithoutWebsiteMobile = filteredLeads.filter(
-      l => !hasRealWebsite(l.site) && isWhatsAppCompatible(l.whatsapp_numero)
+      l => !hasRealWebsite(l.site) && isLeadVerifiedMobile(l)
     );
 
     setSelectedLeads(new Set(leadsWithoutWebsiteMobile.map(l => l.id)));
 
     if (leadsWithoutWebsiteMobile.length === 0) {
-      toast.info('Nenhuma empresa sem site + móvel encontrada nos resultados atuais.');
+      toast.info('Nenhuma empresa sem site + móvel verificado encontrada nos resultados atuais.');
       return;
     }
 
-    toast.success(`${leadsWithoutWebsiteMobile.length} empresas sem site + móvel selecionadas!`);
+    toast.success(`${leadsWithoutWebsiteMobile.length} empresas sem site + móvel verificado selecionadas!`);
   };
 
   const exportPhonesToXLSX = () => {
@@ -177,12 +242,14 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
     }
 
     const phoneData = leadsToExport.map(l => {
-      const isMobile = isWhatsAppCompatible(l.whatsapp_numero);
+      const mobile = isLeadVerifiedMobile(l);
       return {
         'Empresa': l.nome_empresa,
         'Telefone': l.whatsapp_numero ? `+${l.whatsapp_numero}` : '',
-        'Tipo': isMobile ? 'Móvel' : 'Fixo',
-        'WhatsApp Link': isMobile ? `https://wa.me/${l.whatsapp_numero}` : '',
+        'Tipo': getLeadPhoneTypeLabel(l),
+        'Operadora': l.phone_carrier || '',
+        'Verificado': l.phone_lookup_status === 'verified' ? 'Sim' : 'Não',
+        'WhatsApp Link': mobile ? `https://wa.me/${l.whatsapp_numero}` : '',
       };
     });
 
@@ -191,28 +258,29 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Telefones');
     
     XLSX.writeFile(workbook, `telefones_${new Date().toISOString().split('T')[0]}.xlsx`);
-    toast.success(`${leadsToExport.length} números exportados com links wa.me!`);
+    toast.success(`${leadsToExport.length} números exportados com status de verificação.`);
   };
 
   const exportMobileOnly = () => {
-    const mobileLeads = filteredLeads.filter(l => isWhatsAppCompatible(l.whatsapp_numero));
+    const mobileLeads = filteredLeads.filter(isLeadVerifiedMobile);
     if (mobileLeads.length === 0) {
-      toast.error('Nenhum telefone móvel encontrado');
+      toast.error('Nenhum telefone móvel verificado. Faça o Lookup antes de exportar.');
       return;
     }
 
     const phoneData = mobileLeads.map(l => ({
       'Empresa': l.nome_empresa,
       'Telefone': `+${l.whatsapp_numero}`,
-      'WhatsApp Link': `https://wa.me/${l.whatsapp_numero}`,
+      'Operadora': l.phone_carrier || '',
+      'Tipo': 'Móvel verificado',
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(phoneData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'WhatsApp');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Moveis verificados');
     
-    XLSX.writeFile(workbook, `whatsapp_${new Date().toISOString().split('T')[0]}.xlsx`);
-    toast.success(`${mobileLeads.length} números WhatsApp exportados!`);
+    XLSX.writeFile(workbook, `moveis_verificados_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success(`${mobileLeads.length} números móveis verificados exportados!`);
   };
 
   const handleExtractPhones = () => {
@@ -229,6 +297,18 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
     setCopied(true);
     toast.success(`${phones.length} números copiados para a área de transferência!`);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleVerifyPhones = async () => {
+    if (!onVerifyPhones) return;
+
+    const ids = Array.from(selectedLeads);
+    if (ids.length === 0) {
+      toast.error('Selecione pelo menos um lead para verificar.');
+      return;
+    }
+
+    await onVerifyPhones(ids);
   };
 
   const handleDelete = async () => {
@@ -281,6 +361,14 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
           <Phone className="h-3 w-3 text-blue-500" />
           {stats.landline} fixos
         </Badge>
+        <Badge variant="outline" className="gap-1 shrink-0">
+          <Phone className="h-3 w-3 text-amber-500" />
+          {stats.voip} VoIP
+        </Badge>
+        <Badge variant="outline" className="gap-1 shrink-0">
+          <ShieldCheck className="h-3 w-3 text-muted-foreground" />
+          {stats.unverified} não verificados
+        </Badge>
       </div>
 
       {/* Actions Bar */}
@@ -312,6 +400,16 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                 >
                   <Globe className="h-3 w-3" />
                   Sem site + Móvel
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleVerifyPhones}
+                  disabled={selectedLeads.size === 0 || isVerifyingPhones}
+                  className="flex-1 text-xs"
+                >
+                  {isVerifyingPhones ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
+                  Verificar SMS
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -359,6 +457,15 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                   <Globe className="h-4 w-4" />
                   Sem site + Móvel
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleVerifyPhones}
+                  disabled={selectedLeads.size === 0 || isVerifyingPhones}
+                >
+                  {isVerifyingPhones ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                  {isVerifyingPhones ? 'Verificando...' : 'Verificar SMS'}
+                </Button>
                 <Button 
                   variant="outline" 
                   size="sm" 
@@ -383,7 +490,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                   onClick={exportMobileOnly}
                 >
                   <FileSpreadsheet className="h-4 w-4" />
-                  Exportar XLSX
+                  Exportar Móveis
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -429,8 +536,8 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
           ) : (
             filteredLeads.map((lead) => {
               const status = statusConfig[lead.status || 'extraido'];
-              const phoneType = detectPhoneType(lead.whatsapp_numero);
-              const isMobilePhone = phoneType === 'mobile';
+              const phoneType = getLeadPhoneType(lead);
+              const isMobilePhone = isLeadVerifiedMobile(lead);
               
               return (
                 <div 
@@ -541,8 +648,8 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
             ) : (
               filteredLeads.map((lead) => {
                 const status = statusConfig[lead.status || 'extraido'];
-                const phoneType = detectPhoneType(lead.whatsapp_numero);
-                const isMobile = phoneType === 'mobile';
+                const phoneType = getLeadPhoneType(lead);
+                const isMobile = isLeadVerifiedMobile(lead);
                 
                 return (
                   <TableRow 
@@ -581,11 +688,19 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones }: 
                     </TableCell>
                     <TableCell>
                       {lead.whatsapp_numero ? (
-                        <Badge variant={isMobile ? 'default' : 'secondary'} className={cn(
-                          isMobile && "bg-green-600 hover:bg-green-700"
-                        )}>
-                          {getPhoneTypeLabel(phoneType)}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge
+                            variant={isMobile ? 'default' : 'secondary'}
+                            className={cn(isMobile && "bg-green-600 hover:bg-green-700")}
+                          >
+                            {getLeadPhoneTypeLabel(lead)}
+                          </Badge>
+                          {lead.phone_carrier && (
+                            <span className="text-[11px] text-muted-foreground max-w-[150px] truncate">
+                              {lead.phone_carrier}
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground text-sm">—</span>
                       )}
