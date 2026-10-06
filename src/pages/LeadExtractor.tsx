@@ -18,6 +18,7 @@ import { useLeadExtraction } from "@/hooks/useLeadExtraction";
 import { useExtractionLogs } from "@/hooks/useExtractionLogs";
 import { useExtractionSessions } from "@/hooks/useExtractionSessions";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 export default function LeadExtractor() {
   const { leads, isLoading: isLoadingLeads, deleteLeads, extractPhoneNumbers, verifyPhoneNumbers, isVerifyingPhones, refetch: refetchLeads } = useLeads();
