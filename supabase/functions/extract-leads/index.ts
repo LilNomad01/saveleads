@@ -131,6 +131,27 @@ async function logToSession(supabase: any, sessionId: string, tipo: string, mens
   }
 }
 
+async function updateExtractionSession(
+  supabase: any,
+  sessionId: string,
+  userId: string | undefined,
+  updates: Record<string, unknown>,
+) {
+  if (!sessionId || !userId) return;
+  try {
+    const { error } = await supabase
+      .from('extraction_sessions')
+      .update(updates)
+      .eq('id', sessionId)
+      .eq('user_id', userId);
+    if (error) {
+      console.error(`[extract-leads] Failed to update extraction session: ${error.message}`);
+    }
+  } catch (e) {
+    console.error(`[extract-leads] Failed to update extraction session: ${e}`);
+  }
+}
+
 // =================== UTILITIES ===================
 
 type SearchContext = {
@@ -256,6 +277,7 @@ serve(async (req) => {
   }
 
   let sessionId = '';
+  let sessionUserId: string | undefined;
 
   try {
     // 1. Validate env vars
@@ -286,6 +308,7 @@ serve(async (req) => {
       websiteFilter = 'all',
     } = payload;
     sessionId = sid;
+    sessionUserId = userId;
 
     console.log(`[extract-leads] Payload: source=${source}, type=${searchType}, keyword="${keyword}", location="${location}", provider=${apiProvider}, max=${maxResults}, websiteFilter=${websiteFilter}`);
 
@@ -298,6 +321,30 @@ serve(async (req) => {
     }
     if (maxResults < 1 || maxResults > 10000) {
       return errorResponse('Limite inválido', `maxResults deve ser entre 1 e 10000, recebido: ${maxResults}`);
+    }
+
+    if (userId) {
+      const { error: sessionError } = await supabase
+        .from('extraction_sessions')
+        .upsert({
+          id: sessionId,
+          user_id: userId,
+          query: keyword.trim(),
+          location: location || null,
+          source,
+          search_type: searchType,
+          api_provider: apiProvider,
+          website_filter: websiteFilter,
+          requested_max_results: maxResults,
+          leads_count: 0,
+          status: 'running',
+          started_at: new Date().toISOString(),
+          completed_at: null,
+        }, { onConflict: 'id' });
+
+      if (sessionError) {
+        console.error(`[extract-leads] Failed to create extraction session: ${sessionError.message}`);
+      }
     }
 
     await logToSession(
@@ -406,6 +453,8 @@ serve(async (req) => {
             whatsapp_numero: whatsappNumero,
             site: mockWebsite,
             endereco: `${location} - Centro`,
+            cidade: location || searchContext.locationQuery || '',
+            extraction_session_id: sessionId,
             categoria: keyword,
             avaliacao: Number((3.8 + (i % 12) * 0.1).toFixed(1)),
             total_avaliacoes: 50 + (i % 500),
@@ -447,6 +496,10 @@ serve(async (req) => {
 
       if (!apifyKey) {
         await logToSession(supabase, sessionId, 'error', '❌ Token Apify não configurado. Vá em Configurações e insira seu token.');
+        await updateExtractionSession(supabase, sessionId, userId, {
+          status: 'error',
+          completed_at: new Date().toISOString(),
+        });
         return errorResponse('Token Apify não configurado', 'Nenhum token encontrado no perfil do usuário nem nas variáveis de ambiente. Configure em Configurações > API Token Apify.');
       }
 
@@ -646,6 +699,7 @@ serve(async (req) => {
             site: String(place.website || '').trim(),
             endereco: place.address || place.street || '',
             cidade: location || searchContext.locationQuery || '',
+            extraction_session_id: sessionId,
             categoria: place.categoryName || keyword,
             avaliacao: place.totalScore || place.rating || null,
             total_avaliacoes: place.reviewsCount || place.reviews || 0,
@@ -670,7 +724,13 @@ serve(async (req) => {
     // Final success log
     await logToSession(supabase, sessionId, 'success', `🎉 Total: ${leadsCount} resultados extraídos e salvos.`, { total: leadsCount, source, searchType });
 
-    return successResponse({ leadsCount, source });
+    await updateExtractionSession(supabase, sessionId, userId, {
+      status: 'completed',
+      leads_count: leadsCount,
+      completed_at: new Date().toISOString(),
+    });
+
+    return successResponse({ leadsCount, source, sessionId });
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -684,6 +744,10 @@ serve(async (req) => {
         if (supabaseUrl && supabaseKey) {
           const supabase = createClient(supabaseUrl, supabaseKey);
           await logToSession(supabase, sessionId, 'error', `❌ ${errorMessage}`);
+          await updateExtractionSession(supabase, sessionId, sessionUserId, {
+            status: 'error',
+            completed_at: new Date().toISOString(),
+          });
         }
       } catch { /* ignore logging errors */ }
     }
