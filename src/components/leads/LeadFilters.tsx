@@ -18,7 +18,7 @@ import {
 
 export interface LeadFiltersState {
   search: string;
-  phoneType: 'all' | 'mobile' | 'landline' | 'none';
+  phoneType: 'all' | 'mobile' | 'landline' | 'voip' | 'unverified' | 'none';
   status: string;
   minRating: number | null;
   hasWebsite: 'all' | 'yes' | 'no';
@@ -94,6 +94,18 @@ export function LeadFilters({ filters, onFiltersChange, statusOptions }: LeadFil
             <span className="flex items-center gap-2">
               <PhoneIcon className="h-4 w-4 text-blue-500" />
               Fixo
+            </span>
+          </SelectItem>
+          <SelectItem value="voip">
+            <span className="flex items-center gap-2">
+              <PhoneIcon className="h-4 w-4 text-amber-500" />
+              VoIP
+            </span>
+          </SelectItem>
+          <SelectItem value="unverified">
+            <span className="flex items-center gap-2">
+              <PhoneIcon className="h-4 w-4 text-muted-foreground" />
+              Não verificado
             </span>
           </SelectItem>
           <SelectItem value="none">
