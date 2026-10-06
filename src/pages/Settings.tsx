@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { ApiTokenSettings } from '@/components/settings/ApiTokenSettings';
+import { VeriphoneTokenSettings } from '@/components/settings/VeriphoneTokenSettings';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -109,6 +110,9 @@ const Settings = () => {
 
           {/* API Token Settings */}
           <ApiTokenSettings />
+
+          {/* Veriphone API Token Settings */}
+          <VeriphoneTokenSettings />
 
           {/* N8N Webhook Settings */}
           <Card className="md:col-span-2">
