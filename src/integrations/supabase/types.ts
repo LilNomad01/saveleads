@@ -135,6 +135,12 @@ export type Database = {
           mensagem_enviada: boolean | null
           metadata_json: Json | null
           nome_empresa: string
+          phone_carrier: string | null
+          phone_line_type: string | null
+          phone_lookup_error: string | null
+          phone_lookup_status: string
+          phone_valid: boolean | null
+          phone_verified_at: string | null
           site: string | null
           status: string | null
           telefone_original: string | null
@@ -158,6 +164,12 @@ export type Database = {
           mensagem_enviada?: boolean | null
           metadata_json?: Json | null
           nome_empresa: string
+          phone_carrier?: string | null
+          phone_line_type?: string | null
+          phone_lookup_error?: string | null
+          phone_lookup_status?: string
+          phone_valid?: boolean | null
+          phone_verified_at?: string | null
           site?: string | null
           status?: string | null
           telefone_original?: string | null
@@ -181,6 +193,12 @@ export type Database = {
           mensagem_enviada?: boolean | null
           metadata_json?: Json | null
           nome_empresa?: string
+          phone_carrier?: string | null
+          phone_line_type?: string | null
+          phone_lookup_error?: string | null
+          phone_lookup_status?: string
+          phone_valid?: boolean | null
+          phone_verified_at?: string | null
           site?: string | null
           status?: string | null
           telefone_original?: string | null
