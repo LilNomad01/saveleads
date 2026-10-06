@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Send, Phone, Globe, Star, MapPin, Loader2, Trash2, Copy, Check, FileSpreadsheet, Smartphone, MessageCircle, ExternalLink, ShieldCheck } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -130,6 +130,8 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
   const [isDeleting, setIsDeleting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [filters, setFilters] = useState<LeadFiltersState>(defaultFilters);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ROWS_PER_PAGE = 250;
 
   // Get unique status options
   const statusOptions = useMemo(() => {
@@ -176,6 +178,26 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
       return true;
     });
   }, [leads, filters]);
+
+  // Keep every loaded lead available in memory for filters/selection/export, but
+  // render the table in pages so thousands of rows do not freeze the browser.
+  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / ROWS_PER_PAGE));
+  const pageStart = (currentPage - 1) * ROWS_PER_PAGE;
+  const pageEnd = Math.min(pageStart + ROWS_PER_PAGE, filteredLeads.length);
+  const paginatedLeads = useMemo(
+    () => filteredLeads.slice(pageStart, pageEnd),
+    [filteredLeads, pageStart, pageEnd]
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   // Stats for filtered results
   const stats = useMemo(() => {
@@ -386,6 +408,38 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
         </Badge>
       </div>
 
+      {/* Frontend pagination: all leads stay loaded; only 250 rows render at a time. */}
+      {filteredLeads.length > 0 && (
+        <div className="px-3 sm:px-4 py-2 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm">
+          <span className="text-muted-foreground">
+            Mostrando {pageStart + 1}-{pageEnd} de {filteredLeads.length} leads carregados
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+            >
+              Anterior
+            </Button>
+            <span className="min-w-[110px] text-center text-muted-foreground">
+              Página {currentPage} de {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+            >
+              Próxima
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Actions Bar */}
       <div className="p-3 sm:p-4 border-b border-border">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -549,7 +603,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                 : 'Nenhum lead corresponde aos filtros.'}
             </div>
           ) : (
-            filteredLeads.map((lead) => {
+            paginatedLeads.map((lead) => {
               const status = statusConfig[lead.status || 'extraido'];
               const phoneType = getLeadPhoneType(lead);
               const isMobilePhone = isLeadVerifiedMobile(lead);
@@ -661,7 +715,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                 </TableCell>
               </TableRow>
             ) : (
-              filteredLeads.map((lead) => {
+              paginatedLeads.map((lead) => {
                 const status = statusConfig[lead.status || 'extraido'];
                 const phoneType = getLeadPhoneType(lead);
                 const isMobile = isLeadVerifiedMobile(lead);
