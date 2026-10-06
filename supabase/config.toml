@@ -5,3 +5,7 @@ verify_jwt = false
 
 [auth.email]
 enable_confirmations = false
+
+
+[functions.verify-phone-numbers]
+verify_jwt = true
