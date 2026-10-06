@@ -7,6 +7,7 @@ interface Profile {
   user_id: string;
   full_name: string | null;
   apify_api_token: string | null;
+  veriphone_api_key: string | null;
   n8n_webhook_url: string | null;
   created_at: string;
   updated_at: string;
@@ -44,7 +45,7 @@ export function useProfile() {
     setLoading(false);
   };
 
-  const updateProfile = async (updates: Partial<Pick<Profile, 'full_name' | 'apify_api_token' | 'n8n_webhook_url'>>) => {
+  const updateProfile = async (updates: Partial<Pick<Profile, 'full_name' | 'apify_api_token' | 'veriphone_api_key' | 'n8n_webhook_url'>>) => {
     if (!user) return { error: new Error('Not authenticated') };
 
     const { error } = await supabase
