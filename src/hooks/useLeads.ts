@@ -10,6 +10,7 @@ export interface Lead {
   telefone_original: string | null;
   site: string | null;
   endereco: string | null;
+  cidade: string | null;
   categoria: string | null;
   avaliacao: number | null;
   total_avaliacoes: number | null;
