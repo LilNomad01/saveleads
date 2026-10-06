@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { parsePhoneNumberFromString } from "https://esm.sh/libphonenumber-js@1.11.20/max";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,56 +15,132 @@ const json = (status: number, body: Record<string, unknown>) =>
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function toE164(phone: string | null | undefined): string | null {
-  if (!phone) return null;
-  const trimmed = String(phone).trim();
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length < 10 || digits.length > 15) return null;
-  return `+${digits}`;
-}
-
-type LookupResult = {
+type PhoneAnalysis = {
   ok: boolean;
-  valid?: boolean;
+  valid: boolean;
+  e164?: string | null;
+  country?: string | null;
   type?: string | null;
+  rawType?: string | null;
   carrier?: string | null;
+  provider: "veriphone" | "libphonenumber";
   error?: string | null;
 };
 
-async function lookupPhone(
+function normalizeCandidate(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const raw = String(phone).trim();
+  if (!raw) return null;
+
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 7 || digits.length > 15) return null;
+
+  if (raw.startsWith("+")) return `+${digits}`;
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return `+${digits}`;
+}
+
+function mapLocalType(rawType: string | undefined): string {
+  switch (rawType) {
+    case "MOBILE":
+      return "mobile";
+    case "FIXED_LINE":
+      return "landline";
+    case "VOIP":
+      return "nonFixedVoip";
+    case "FIXED_LINE_OR_MOBILE":
+      return "unknown";
+    default:
+      return "unknown";
+  }
+}
+
+function localAnalyze(phone: string | null | undefined): PhoneAnalysis {
+  const candidate = normalizeCandidate(phone);
+  if (!candidate) {
+    return {
+      ok: true,
+      valid: false,
+      provider: "libphonenumber",
+      error: "Número inválido ou fora do padrão internacional",
+    };
+  }
+
+  try {
+    const parsed = parsePhoneNumberFromString(candidate);
+    if (!parsed || !parsed.isValid()) {
+      return {
+        ok: true,
+        valid: false,
+        e164: parsed?.number || candidate,
+        country: parsed?.country || null,
+        provider: "libphonenumber",
+        error: "Formato ou faixa de numeração inválida",
+      };
+    }
+
+    const rawType = parsed.getType();
+    return {
+      ok: true,
+      valid: true,
+      e164: parsed.number,
+      country: parsed.country || null,
+      type: mapLocalType(rawType),
+      rawType: rawType || null,
+      carrier: null,
+      provider: "libphonenumber",
+      error: null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      valid: false,
+      provider: "libphonenumber",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function mapVeriphoneType(rawType: string | null | undefined): string {
+  const type = String(rawType || "").toLowerCase();
+  if (type === "mobile") return "mobile";
+  if (type === "fixed_line" || type === "landline") return "landline";
+  if (type === "voip") return "nonFixedVoip";
+  if (type === "fixed_line_or_mobile") return "unknown";
+  return "unknown";
+}
+
+async function lookupVeriphone(
   phone: string,
-  username: string,
-  password: string,
-): Promise<LookupResult> {
-  const url =
-    `https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(phone)}?Fields=line_type_intelligence`;
+  apiKey: string,
+): Promise<PhoneAnalysis> {
+  const url = `https://api.veriphone.io/v3/verify?phone=${encodeURIComponent(phone)}&mode=static`;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const response = await fetch(url, {
-        method: "GET",
         headers: {
-          Authorization: `Basic ${btoa(`${username}:${password}`)}`,
+          Authorization: `Bearer ${apiKey}`,
           Accept: "application/json",
         },
       });
 
-      const bodyText = await response.text();
-      let payload: any = null;
-      try {
-        payload = JSON.parse(bodyText);
-      } catch {
-        payload = null;
-      }
+      const payload = await response.json().catch(() => null);
 
-      if (response.ok) {
-        const lineType = payload?.line_type_intelligence ?? {};
+      if (response.ok && payload?.status === "success") {
         return {
           ok: true,
-          valid: payload?.valid === true,
-          type: lineType?.type ?? null,
-          carrier: lineType?.carrier_name ?? null,
-          error: lineType?.error_code ? String(lineType.error_code) : null,
+          valid: payload?.phone_valid === true,
+          e164: payload?.e164 || payload?.phone || phone,
+          country: payload?.country_code || null,
+          type: mapVeriphoneType(payload?.phone_type),
+          rawType: payload?.phone_type || null,
+          carrier: payload?.carrier || null,
+          provider: "veriphone",
+          error: payload?.phone_valid === false
+            ? String(payload?.reason || "Número inválido")
+            : null,
         };
       }
 
@@ -74,22 +151,36 @@ async function lookupPhone(
 
       const message =
         payload?.message ||
-        payload?.detail ||
-        `Twilio Lookup HTTP ${response.status}`;
-      return { ok: false, error: String(message).slice(0, 500) };
+        payload?.type ||
+        `Veriphone HTTP ${response.status}`;
+
+      return {
+        ok: false,
+        valid: false,
+        provider: "veriphone",
+        error: String(message).slice(0, 500),
+      };
     } catch (error) {
       if (attempt === 0) {
         await sleep(700);
         continue;
       }
+
       return {
         ok: false,
+        valid: false,
+        provider: "veriphone",
         error: error instanceof Error ? error.message : String(error),
       };
     }
   }
 
-  return { ok: false, error: "Falha desconhecida no Twilio Lookup" };
+  return {
+    ok: false,
+    valid: false,
+    provider: "veriphone",
+    error: "Falha desconhecida no Veriphone",
+  };
 }
 
 Deno.serve(async (req: Request) => {
@@ -156,24 +247,13 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Prefer restricted API keys in production. Account SID/Auth Token remains
-  // supported as a fallback for accounts that have not created an API Key yet.
-  const apiKey = Deno.env.get("TWILIO_API_KEY");
-  const apiSecret = Deno.env.get("TWILIO_API_SECRET");
-  const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-  const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
-
-  const username = apiKey || accountSid;
-  const password = apiSecret || authToken;
-
-  if (!username || !password) {
-    return json(200, {
-      success: false,
-      code: "TWILIO_NOT_CONFIGURED",
-      error:
-        "Twilio Lookup não configurado. Adicione TWILIO_API_KEY + TWILIO_API_SECRET (recomendado) ou TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN nos Secrets do Supabase.",
-    });
-  }
+  // Free-only mode:
+  // 1) libphonenumber runs locally and consumes no API credits.
+  // 2) Veriphone standard lookup is used only when VERIPHONE_API_KEY is configured.
+  //    The standard lookup consumes the provider's free monthly credits. We never
+  //    call mode=current here, so this function will not intentionally use paid
+  //    Current Carrier Lookup credits.
+  const veriphoneKey = Deno.env.get("VERIPHONE_API_KEY");
 
   const admin = createClient(supabaseUrl, serviceRole);
 
@@ -199,53 +279,75 @@ Deno.serve(async (req: Request) => {
     other: 0,
     invalid: 0,
     errors: 0,
+    veriphone: 0,
+    localOnly: 0,
+    ambiguous: 0,
   };
 
   const results: Array<Record<string, unknown>> = [];
-
-  // Small waves reduce the chance of rate limiting while keeping the UI fast.
   const source = leads || [];
-  for (let offset = 0; offset < source.length; offset += 10) {
-    const wave = source.slice(offset, offset + 10);
+
+  // Small waves keep within free-provider rate limits while preserving decent speed.
+  for (let offset = 0; offset < source.length; offset += 5) {
+    const wave = source.slice(offset, offset + 5);
 
     const waveResults = await Promise.all(
       wave.map(async (lead: any) => {
-        const e164 = toE164(lead.whatsapp_numero || lead.telefone_original);
+        const rawPhone = lead.whatsapp_numero || lead.telefone_original;
+        const local = localAnalyze(rawPhone);
 
-        if (!e164) {
-          const update = {
-            phone_lookup_status: "verified",
-            phone_valid: false,
-            phone_line_type: null,
-            phone_carrier: null,
-            phone_lookup_error: "Número inválido ou fora do padrão E.164",
-            phone_verified_at: new Date().toISOString(),
-          };
-
-          await admin.from("leads").update(update).eq("id", lead.id).eq("user_id", user.id);
-          summary.invalid++;
-          return { id: lead.id, ok: true, valid: false, type: null };
-        }
-
-        const lookup = await lookupPhone(e164, username, password);
-
-        if (!lookup.ok) {
+        if (!local.ok || !local.valid || !local.e164) {
           await admin
             .from("leads")
             .update({
-              phone_lookup_status: "error",
-              phone_lookup_error: lookup.error || "Erro no Twilio Lookup",
+              phone_lookup_status: local.ok ? "verified" : "error",
+              phone_valid: false,
+              phone_line_type: null,
+              phone_carrier: null,
+              phone_lookup_provider: "libphonenumber",
+              phone_lookup_error: local.error || "Número inválido",
               phone_verified_at: new Date().toISOString(),
             })
             .eq("id", lead.id)
             .eq("user_id", user.id);
 
-          summary.errors++;
-          return { id: lead.id, ok: false, error: lookup.error };
+          if (local.ok) summary.invalid++;
+          else summary.errors++;
+
+          return {
+            id: lead.id,
+            ok: local.ok,
+            valid: false,
+            provider: "libphonenumber",
+            error: local.error || null,
+          };
         }
 
-        const lineType = lookup.type || "unknown";
-        const isValid = lookup.valid === true;
+        let finalResult = local;
+        let lookupStatus = "local";
+
+        if (veriphoneKey) {
+          const remote = await lookupVeriphone(local.e164, veriphoneKey);
+
+          if (remote.ok) {
+            finalResult = remote;
+            lookupStatus = "verified";
+            summary.veriphone++;
+          } else {
+            // Free quota exhausted / provider unavailable: keep the local result
+            // and do not fall back to any paid service.
+            summary.localOnly++;
+            finalResult = {
+              ...local,
+              error: `Veriphone indisponível; validação local usada: ${remote.error || "erro desconhecido"}`,
+            };
+          }
+        } else {
+          summary.localOnly++;
+        }
+
+        const lineType = finalResult.type || "unknown";
+        const isValid = finalResult.valid === true;
 
         if (!isValid) {
           summary.invalid++;
@@ -257,16 +359,18 @@ Deno.serve(async (req: Request) => {
           summary.voip++;
         } else {
           summary.other++;
+          summary.ambiguous++;
         }
 
         await admin
           .from("leads")
           .update({
-            phone_lookup_status: "verified",
+            phone_lookup_status: lookupStatus,
             phone_valid: isValid,
             phone_line_type: lineType,
-            phone_carrier: lookup.carrier || null,
-            phone_lookup_error: lookup.error || null,
+            phone_carrier: finalResult.carrier || null,
+            phone_lookup_provider: finalResult.provider,
+            phone_lookup_error: finalResult.error || null,
             phone_verified_at: new Date().toISOString(),
           })
           .eq("id", lead.id)
@@ -277,13 +381,28 @@ Deno.serve(async (req: Request) => {
           ok: true,
           valid: isValid,
           type: lineType,
-          carrier: lookup.carrier || null,
+          rawType: finalResult.rawType || null,
+          carrier: finalResult.carrier || null,
+          provider: finalResult.provider,
+          lookupStatus,
         };
       }),
     );
 
     results.push(...waveResults);
+
+    if (veriphoneKey && offset + 5 < source.length) {
+      await sleep(150);
+    }
   }
 
-  return json(200, { success: true, summary, results });
+  return json(200, {
+    success: true,
+    mode: veriphoneKey ? "free_veriphone_plus_local" : "local_only",
+    summary,
+    results,
+    notice: veriphoneKey
+      ? "Verificação gratuita: Veriphone (modo static) + libphonenumber. Nenhum fallback pago é utilizado."
+      : "VERIPHONE_API_KEY não configurada: somente libphonenumber local foi utilizado. Nos EUA, ele não confirma com segurança se uma linha é móvel nem se recebe SMS.",
+  });
 });
