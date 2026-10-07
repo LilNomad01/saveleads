@@ -247,17 +247,10 @@ Deno.serve(async (req: Request) => {
     seen.add(key);
 
     const credits = await getCredits(key);
-    if (!credits.ok) {
-      await markKeyUnavailable(admin, row.id, credits.error || "Falha ao consultar créditos", 1);
-      continue;
-    }
 
-    if (credits.available <= 0) {
-      await markKeyUnavailable(admin, row.id, "Insufficient credits", 12);
-      continue;
-    }
-
-    // If credits were replenished, immediately return the key to rotation.
+    // Do not reject a fresh key only because /credits reports zero/stale data.
+    // The authoritative balance check happens when /v3/file/verify starts.
+    // If that endpoint returns HTTP 402, this key is then marked unavailable.
     await admin
       .from("api_keys")
       .update({ disabled_until: null, last_error: null })
@@ -267,7 +260,7 @@ Deno.serve(async (req: Request) => {
       id: row.id,
       key,
       label: row.label || "Veriphone",
-      available: credits.available,
+      available: credits.ok && credits.available > 0 ? credits.available : 1000,
     });
   }
 
