@@ -226,12 +226,43 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
     setSelectedLeads(newSelected);
   };
 
+  const allFilteredSelected =
+    filteredLeads.length > 0 &&
+    filteredLeads.every((lead) => selectedLeads.has(lead.id));
+
   const toggleAll = () => {
-    if (selectedLeads.size === filteredLeads.length) {
-      setSelectedLeads(new Set());
+    if (allFilteredSelected) {
+      setSelectedLeads((current) => {
+        const next = new Set(current);
+        filteredLeads.forEach((lead) => next.delete(lead.id));
+        return next;
+      });
     } else {
-      setSelectedLeads(new Set(filteredLeads.map(l => l.id)));
+      setSelectedLeads((current) => {
+        const next = new Set(current);
+        filteredLeads.forEach((lead) => next.add(lead.id));
+        return next;
+      });
     }
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedLeads(new Set(filteredLeads.map((lead) => lead.id)));
+    toast.success(`${filteredLeads.length} leads selecionados — todas as páginas.`);
+  };
+
+  const selectAllUnverified = () => {
+    const unverified = filteredLeads.filter(
+      (lead) => !!lead.whatsapp_numero && lead.phone_lookup_status !== 'verified'
+    );
+    setSelectedLeads(new Set(unverified.map((lead) => lead.id)));
+
+    if (unverified.length === 0) {
+      toast.info('Todos os leads com telefone desta visualização já foram verificados.');
+      return;
+    }
+
+    toast.success(`${unverified.length} leads não verificados selecionados — todas as páginas.`);
   };
 
   const selectAllMobile = () => {
@@ -452,6 +483,26 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
           <div className="flex gap-2 flex-wrap">
             {isMobile ? (
               <>
+                <Button
+                  variant={allFilteredSelected ? "default" : "outline"}
+                  size="sm"
+                  onClick={selectAllFiltered}
+                  disabled={filteredLeads.length === 0}
+                  className="flex-1 text-xs"
+                >
+                  <Check className="h-3 w-3" />
+                  Todos ({filteredLeads.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={selectAllUnverified}
+                  disabled={stats.unverified === 0}
+                  className="flex-1 text-xs"
+                >
+                  <ShieldCheck className="h-3 w-3" />
+                  Não verif. ({stats.unverified})
+                </Button>
                 <Button 
                   variant="outline" 
                   size="sm" 
@@ -510,6 +561,24 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
               </>
             ) : (
               <>
+                <Button
+                  variant={allFilteredSelected ? "default" : "outline"}
+                  size="sm"
+                  onClick={selectAllFiltered}
+                  disabled={filteredLeads.length === 0}
+                >
+                  <Check className="h-4 w-4" />
+                  Selecionar Todos ({filteredLeads.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={selectAllUnverified}
+                  disabled={stats.unverified === 0}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  Não verificados ({stats.unverified})
+                </Button>
                 <Button 
                   variant="outline" 
                   size="sm" 
@@ -692,7 +761,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
             <TableRow>
               <TableHead className="w-12">
                 <Checkbox 
-                  checked={filteredLeads.length > 0 && selectedLeads.size === filteredLeads.length}
+                  checked={allFilteredSelected}
                   onCheckedChange={toggleAll}
                 />
               </TableHead>
