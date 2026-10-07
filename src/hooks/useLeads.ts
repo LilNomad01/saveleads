@@ -337,7 +337,13 @@ export function useLeads() {
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setLeads(prev => [payload.new as Lead, ...prev]);
+            // Avoid duplicates when realtime INSERT arrives while a paginated refetch is running.
+            setLeads(prev => {
+              const inserted = payload.new as Lead;
+              return prev.some(lead => lead.id === inserted.id)
+                ? prev.map(lead => lead.id === inserted.id ? inserted : lead)
+                : [inserted, ...prev];
+            });
           } else if (payload.eventType === 'UPDATE') {
             setLeads(prev => prev.map(lead => 
               lead.id === (payload.new as Lead).id ? payload.new as Lead : lead
