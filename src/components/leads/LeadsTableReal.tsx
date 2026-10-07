@@ -102,6 +102,18 @@ const isLeadVerifiedMobile = (lead: Lead) => {
     detectPhoneType(lead.whatsapp_numero) === 'mobile';
 };
 
+const isLeadActuallyUnverified = (lead: Lead) => {
+  if (!lead.whatsapp_numero) return false;
+  const status = String(lead.phone_lookup_status || 'unverified');
+  return status === 'unverified' || status === 'error';
+};
+
+const isLeadLocalUncertain = (lead: Lead) => {
+  return !!lead.whatsapp_numero &&
+    lead.phone_lookup_status === 'local' &&
+    getLeadPhoneType(lead) === 'unknown';
+};
+
 const getLeadPhoneTypeLabel = (lead: Lead) => {
   if (!lead.whatsapp_numero) return 'Sem telefone';
   if (lead.phone_lookup_status === 'error') return 'Erro no lookup';
@@ -162,7 +174,8 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
         if (filters.phoneType === 'mobile' && phoneType !== 'mobile') return false;
         if (filters.phoneType === 'landline' && phoneType !== 'landline') return false;
         if (filters.phoneType === 'voip' && phoneType !== 'voip') return false;
-        if (filters.phoneType === 'unverified' && lead.phone_lookup_status === 'verified') return false;
+        if (filters.phoneType === 'unverified' && !isLeadActuallyUnverified(lead)) return false;
+        if (filters.phoneType === 'uncertain' && !isLeadLocalUncertain(lead)) return false;
         if (filters.phoneType === 'none' && lead.whatsapp_numero) return false;
       }
 
@@ -206,15 +219,15 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
     const mobileCount = filteredLeads.filter(isLeadVerifiedMobile).length;
     const landlineCount = filteredLeads.filter(l => getLeadPhoneType(l) === 'landline').length;
     const voipCount = filteredLeads.filter(l => getLeadPhoneType(l) === 'voip').length;
-    const unverifiedCount = filteredLeads.filter(
-      l => !!l.whatsapp_numero && l.phone_lookup_status !== 'verified'
-    ).length;
+    const unverifiedCount = filteredLeads.filter(isLeadActuallyUnverified).length;
+    const uncertainCount = filteredLeads.filter(isLeadLocalUncertain).length;
     return {
       total: filteredLeads.length,
       mobile: mobileCount,
       landline: landlineCount,
       voip: voipCount,
-      unverified: unverifiedCount
+      unverified: unverifiedCount,
+      uncertain: uncertainCount
     };
   }, [filteredLeads]);
 
@@ -222,14 +235,14 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
   // regardless of the selected extraction/batch or the current table page.
   const globalStats = useMemo(() => {
     const mobile = globalLeads.filter(isLeadVerifiedMobile).length;
-    const unverified = globalLeads.filter(
-      l => !!l.whatsapp_numero && l.phone_lookup_status !== 'verified'
-    ).length;
+    const unverified = globalLeads.filter(isLeadActuallyUnverified).length;
+    const uncertain = globalLeads.filter(isLeadLocalUncertain).length;
 
     return {
       total: globalLeads.length,
       mobile,
       unverified,
+      uncertain,
     };
   }, [globalLeads]);
 
@@ -269,17 +282,15 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
   };
 
   const selectAllUnverified = () => {
-    const unverified = globalLeads.filter(
-      (lead) => !!lead.whatsapp_numero && lead.phone_lookup_status !== 'verified'
-    );
+    const unverified = globalLeads.filter(isLeadActuallyUnverified);
     setSelectedLeads(new Set(unverified.map((lead) => lead.id)));
 
     if (unverified.length === 0) {
-      toast.info('Todos os leads com telefone já foram verificados.');
+      toast.info('Não há leads realmente não verificados. Os resultados locais/incertos ficam separados.');
       return;
     }
 
-    toast.success(`${unverified.length} leads não verificados selecionados — todos os lotes.`);
+    toast.success(`${unverified.length} leads realmente não verificados selecionados — todos os lotes.`);
   };
 
   const selectAllMobile = () => {
@@ -454,6 +465,10 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
           <ShieldCheck className="h-3 w-3 text-muted-foreground" />
           {stats.unverified} não verificados
         </Badge>
+        <Badge variant="outline" className="gap-1 shrink-0">
+          <Phone className="h-3 w-3 text-muted-foreground" />
+          {stats.uncertain} tipo incerto
+        </Badge>
         {globalLeads.length !== leads.length && (
           <>
             <span className="mx-1 h-4 w-px bg-border shrink-0" />
@@ -466,7 +481,11 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
             </Badge>
             <Badge variant="secondary" className="gap-1 shrink-0">
               <ShieldCheck className="h-3 w-3" />
-              {globalStats.unverified} a verificar no total
+              {globalStats.unverified} realmente não verificados
+            </Badge>
+            <Badge variant="secondary" className="gap-1 shrink-0">
+              <Phone className="h-3 w-3" />
+              {globalStats.uncertain} tipo incerto
             </Badge>
           </>
         )}
@@ -534,7 +553,7 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
                   className="flex-1 text-xs"
                 >
                   <ShieldCheck className="h-3 w-3" />
-                  Não verif. geral ({globalStats.unverified})
+                  Não verif. real ({globalStats.unverified})
                 </Button>
                 <Button 
                   variant="outline" 
@@ -610,7 +629,7 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
                   disabled={globalStats.unverified === 0}
                 >
                   <ShieldCheck className="h-4 w-4" />
-                  Não verificados — geral ({globalStats.unverified})
+                  Não verificados reais ({globalStats.unverified})
                 </Button>
                 <Button 
                   variant="outline" 
