@@ -109,6 +109,14 @@ const isLeadActuallyUnverified = (lead: Lead) => {
   return status === 'unverified' || status === 'error';
 };
 
+const isLeadPendingApiVerification = (lead: Lead) => {
+  if (!lead.whatsapp_numero) return false;
+  return !(
+    lead.phone_lookup_status === 'verified' &&
+    lead.phone_lookup_provider === 'veriphone'
+  );
+};
+
 const isLeadLocalUncertain = (lead: Lead) => {
   return !!lead.whatsapp_numero &&
     lead.phone_lookup_status === 'local' &&
@@ -222,13 +230,15 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
     const voipCount = filteredLeads.filter(l => getLeadPhoneType(l) === 'voip').length;
     const unverifiedCount = filteredLeads.filter(isLeadActuallyUnverified).length;
     const uncertainCount = filteredLeads.filter(isLeadLocalUncertain).length;
+    const pendingApiCount = filteredLeads.filter(isLeadPendingApiVerification).length;
     return {
       total: filteredLeads.length,
       mobile: mobileCount,
       landline: landlineCount,
       voip: voipCount,
       unverified: unverifiedCount,
-      uncertain: uncertainCount
+      uncertain: uncertainCount,
+      pendingApi: pendingApiCount
     };
   }, [filteredLeads]);
 
@@ -238,12 +248,14 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
     const mobile = globalLeads.filter(isLeadVerifiedMobile).length;
     const unverified = globalLeads.filter(isLeadActuallyUnverified).length;
     const uncertain = globalLeads.filter(isLeadLocalUncertain).length;
+    const pendingApi = globalLeads.filter(isLeadPendingApiVerification).length;
 
     return {
       total: globalLeads.length,
       mobile,
       unverified,
       uncertain,
+      pendingApi,
     };
   }, [globalLeads]);
 
@@ -282,16 +294,16 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
     toast.success(`${filteredLeads.length} leads selecionados — todas as páginas.`);
   };
 
-  const selectAllUnverified = () => {
-    const unverified = globalLeads.filter(isLeadActuallyUnverified);
-    setSelectedLeads(new Set(unverified.map((lead) => lead.id)));
+  const selectAllPendingApi = () => {
+    const pending = globalLeads.filter(isLeadPendingApiVerification);
+    setSelectedLeads(new Set(pending.map((lead) => lead.id)));
 
-    if (unverified.length === 0) {
-      toast.info('Não há leads realmente não verificados. Os resultados locais/incertos ficam separados.');
+    if (pending.length === 0) {
+      toast.success('Todos os números com telefone já foram verificados pelo Veriphone.');
       return;
     }
 
-    toast.success(`${unverified.length} leads realmente não verificados selecionados — todos os lotes.`);
+    toast.success(`${pending.length} número(s) pendentes de verificação por API selecionados.`);
   };
 
   const selectAllMobile = () => {
@@ -488,6 +500,10 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
               <Phone className="h-3 w-3" />
               {globalStats.uncertain} tipo incerto
             </Badge>
+            <Badge variant="secondary" className="gap-1 shrink-0">
+              <ShieldCheck className="h-3 w-3" />
+              {globalStats.pendingApi} pendentes de API
+            </Badge>
           </>
         )}
       </div>
@@ -549,12 +565,12 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={selectAllUnverified}
-                  disabled={globalStats.unverified === 0}
+                  onClick={selectAllPendingApi}
+                  disabled={globalStats.pendingApi === 0}
                   className="flex-1 text-xs"
                 >
                   <ShieldCheck className="h-3 w-3" />
-                  Não verif. real ({globalStats.unverified})
+                  Pendentes API ({globalStats.pendingApi})
                 </Button>
                 <Button 
                   variant="outline" 
@@ -628,11 +644,11 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={selectAllUnverified}
-                  disabled={globalStats.unverified === 0}
+                  onClick={selectAllPendingApi}
+                  disabled={globalStats.pendingApi === 0}
                 >
                   <ShieldCheck className="h-4 w-4" />
-                  Não verificados reais ({globalStats.unverified})
+                  Pendentes API ({globalStats.pendingApi})
                 </Button>
                 <Button 
                   variant="outline" 
