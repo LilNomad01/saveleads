@@ -84,7 +84,7 @@ async function markKeyUnavailable(admin: any, id: string, message: string, hours
 async function uploadAndStart(
   apiKey: string,
   csv: string,
-): Promise<{ ok: boolean; fileId?: string; error?: string; code?: number }> {
+): Promise<{ ok: boolean; fileId?: string; error?: string; code?: number; creditsAvailable?: number; creditsRequired?: number }> {
   const form = new FormData();
   form.append("file", new Blob([csv], { type: "text/csv" }), "saveleads_verification.csv");
   form.append("column", "1");
@@ -126,6 +126,8 @@ async function uploadAndStart(
     return {
       ok: false,
       code: verifyResponse.status,
+      creditsAvailable: Number(verifyPayload?.credits_available ?? NaN),
+      creditsRequired: Number(verifyPayload?.credits_required ?? NaN),
       error: String(verifyPayload?.message || verifyPayload?.type || `Verify HTTP ${verifyResponse.status}`),
     };
   }
