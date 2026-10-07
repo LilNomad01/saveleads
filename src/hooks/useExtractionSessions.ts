@@ -69,6 +69,19 @@ export function useExtractionSessions() {
     fetchSessions();
   }, [fetchSessions]);
 
+  // Apify Google Maps extractions now finish asynchronously via webhook.
+  // Refresh running sessions periodically so the UI changes from "Em andamento"
+  // to completed/error without requiring a manual page reload.
+  useEffect(() => {
+    if (!user || !sessions.some((session) => session.status === 'running')) return;
+
+    const timer = window.setInterval(() => {
+      fetchSessions();
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, [user, sessions, fetchSessions]);
+
   return {
     sessions,
     isLoading,
