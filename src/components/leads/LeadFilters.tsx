@@ -18,7 +18,7 @@ import {
 
 export interface LeadFiltersState {
   search: string;
-  phoneType: 'all' | 'mobile' | 'landline' | 'voip' | 'unverified' | 'none';
+  phoneType: 'all' | 'mobile' | 'landline' | 'voip' | 'unverified' | 'uncertain' | 'none';
   status: string;
   minRating: number | null;
   hasWebsite: 'all' | 'yes' | 'no';
@@ -106,6 +106,12 @@ export function LeadFilters({ filters, onFiltersChange, statusOptions }: LeadFil
             <span className="flex items-center gap-2">
               <PhoneIcon className="h-4 w-4 text-muted-foreground" />
               Não verificado
+            </span>
+          </SelectItem>
+          <SelectItem value="uncertain">
+            <span className="flex items-center gap-2">
+              <PhoneIcon className="h-4 w-4 text-muted-foreground" />
+              Tipo incerto (local)
             </span>
           </SelectItem>
           <SelectItem value="none">
