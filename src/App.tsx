@@ -11,6 +11,7 @@ import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import AutoDispatch from "./pages/AutoDispatch";
+import CsvVerification from "./pages/CsvVerification";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/" element={<Landing />} />
           <Route path="/app" element={<Index />} />
           <Route path="/leads" element={<LeadExtractor />} />
+          <Route path="/verificacao" element={<CsvVerification />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/configuracoes" element={<Settings />} />
