@@ -380,7 +380,7 @@ export default function CsvVerification() {
             ["VoIP", voip, Wifi],
             ["Inválidos / repetidos", invalid, CircleAlert],
             ["Desconhecidos / erro", unknown, CircleAlert],
-          ].map(([label, count, Icon]) => (
+          ] as const).map(([label, count, Icon]) => (
             <Card key={String(label)}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between gap-2">
