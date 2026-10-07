@@ -216,7 +216,8 @@ export default function LeadExtractor() {
               </div>
             )}
             <LeadsTableReal 
-              leads={visibleGoogleMapsLeads} 
+              leads={visibleGoogleMapsLeads}
+              allLeads={leads}
               isLoading={isLoadingLeads} 
               onDelete={deleteLeads}
               onExtractPhones={extractPhoneNumbers}
