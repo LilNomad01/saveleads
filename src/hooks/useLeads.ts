@@ -47,6 +47,7 @@ export function useLeads() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isVerifyingPhones, setIsVerifyingPhones] = useState(false);
+  const [verificationProgress, setVerificationProgress] = useState<{ processed: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchLeads = useCallback(async () => {
@@ -194,14 +195,31 @@ export function useLeads() {
     if (!user || leadIds.length === 0) return false;
 
     const uniqueIds = Array.from(new Set(leadIds));
+
+    // Never resend leads that were already processed locally or remotely.
+    // This protects against stale selections from an older frontend build.
+    const leadById = new Map(leads.map((lead) => [lead.id, lead]));
+    const pendingIds = uniqueIds.filter((id) => {
+      const lead = leadById.get(id);
+      if (!lead?.whatsapp_numero) return false;
+      const status = String(lead.phone_lookup_status || 'unverified');
+      return status === 'unverified' || status === 'error';
+    });
+
+    if (pendingIds.length === 0) {
+      toast.info('Nenhum número realmente pendente. Os números já analisados localmente aparecem em “Tipo incerto”.');
+      return false;
+    }
+
     const chunks: string[][] = [];
     // Edge Function accepts up to 50 IDs; use the full batch size so
     // verifying thousands of selected leads needs fewer requests.
-    for (let i = 0; i < uniqueIds.length; i += 50) {
-      chunks.push(uniqueIds.slice(i, i + 50));
+    for (let i = 0; i < pendingIds.length; i += 50) {
+      chunks.push(pendingIds.slice(i, i + 50));
     }
 
     setIsVerifyingPhones(true);
+    setVerificationProgress({ processed: 0, total: pendingIds.length });
 
     let mobile = 0;
     let landline = 0;
@@ -230,8 +248,11 @@ export function useLeads() {
         veriphone += Number(data?.summary?.veriphone || 0);
         ambiguous += Number(data?.summary?.ambiguous || 0);
 
+        const processed = Math.min((i + 1) * 50, pendingIds.length);
+        setVerificationProgress({ processed, total: pendingIds.length });
+
         if (chunks.length > 1 && (i === 0 || (i + 1) % 5 === 0 || i === chunks.length - 1)) {
-          toast.info(`Verificação: ${Math.min((i + 1) * 50, uniqueIds.length)}/${uniqueIds.length} números processados`);
+          toast.info(`Verificação: ${processed}/${pendingIds.length} números processados`);
         }
       }
 
@@ -251,8 +272,9 @@ export function useLeads() {
       return false;
     } finally {
       setIsVerifyingPhones(false);
+      setVerificationProgress(null);
     }
-  }, [user, fetchLeads]);
+  }, [user, fetchLeads, leads]);
 
   const getStats = useCallback((): LeadsStats => {
     const now = new Date();
@@ -371,6 +393,7 @@ export function useLeads() {
     getStats,
     extractPhoneNumbers,
     verifyPhoneNumbers,
-    isVerifyingPhones
+    isVerifyingPhones,
+    verificationProgress
   };
 }
