@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/select";
 
 export default function LeadExtractor() {
-  const { leads, isLoading: isLoadingLeads, deleteLeads, extractPhoneNumbers, verifyPhoneNumbers, isVerifyingPhones, refetch: refetchLeads } = useLeads();
+  const { leads, isLoading: isLoadingLeads, deleteLeads, extractPhoneNumbers, verifyPhoneNumbers, isVerifyingPhones, verificationProgress, refetch: refetchLeads } = useLeads();
   const { leads: telegramLeads, isLoading: isLoadingTelegram, deleteLeads: deleteTelegramLeads } = useTelegramLeads();
   const { leads: linkedinLeads, isLoading: isLoadingLinkedin, deleteLeads: deleteLinkedinLeads } = useLinkedinLeads();
   const { leads: reviewsLeads, isLoading: isLoadingReviews, deleteLeads: deleteReviewsLeads } = useReviewsLeads();
@@ -223,6 +223,7 @@ export default function LeadExtractor() {
               onExtractPhones={extractPhoneNumbers}
               onVerifyPhones={verifyPhoneNumbers}
               isVerifyingPhones={isVerifyingPhones}
+              verificationProgress={verificationProgress}
             />
           </TabsContent>
 
