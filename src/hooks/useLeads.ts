@@ -195,8 +195,10 @@ export function useLeads() {
 
     const uniqueIds = Array.from(new Set(leadIds));
     const chunks: string[][] = [];
-    for (let i = 0; i < uniqueIds.length; i += 25) {
-      chunks.push(uniqueIds.slice(i, i + 25));
+    // Edge Function accepts up to 50 IDs; use the full batch size so
+    // verifying thousands of selected leads needs fewer requests.
+    for (let i = 0; i < uniqueIds.length; i += 50) {
+      chunks.push(uniqueIds.slice(i, i + 50));
     }
 
     setIsVerifyingPhones(true);
@@ -228,8 +230,8 @@ export function useLeads() {
         veriphone += Number(data?.summary?.veriphone || 0);
         ambiguous += Number(data?.summary?.ambiguous || 0);
 
-        if (chunks.length > 1) {
-          toast.info(`Verificação: lote ${i + 1}/${chunks.length} concluído`);
+        if (chunks.length > 1 && (i === 0 || (i + 1) % 5 === 0 || i === chunks.length - 1)) {
+          toast.info(`Verificação: ${Math.min((i + 1) * 50, uniqueIds.length)}/${uniqueIds.length} números processados`);
         }
       }
 
