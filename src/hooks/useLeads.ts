@@ -195,80 +195,141 @@ export function useLeads() {
     if (!user || leadIds.length === 0) return false;
 
     const uniqueIds = Array.from(new Set(leadIds));
-
-    // Never resend leads that were already processed locally or remotely.
-    // This protects against stale selections from an older frontend build.
     const leadById = new Map(leads.map((lead) => [lead.id, lead]));
+
+    // A number only counts as fully checked when Veriphone actually returned
+    // a remote result. Local/libphonenumber checks remain eligible so that
+    // every selected number can eventually be classified by the API.
     const pendingIds = uniqueIds.filter((id) => {
       const lead = leadById.get(id);
       if (!lead?.whatsapp_numero) return false;
-      const status = String(lead.phone_lookup_status || 'unverified');
-      return status === 'unverified' || status === 'error';
+      return !(
+        lead.phone_lookup_status === 'verified' &&
+        lead.phone_lookup_provider === 'veriphone'
+      );
     });
 
     if (pendingIds.length === 0) {
-      toast.info('Nenhum número realmente pendente. Os números já analisados localmente aparecem em “Tipo incerto”.');
-      return false;
-    }
-
-    const chunks: string[][] = [];
-    // Edge Function accepts up to 50 IDs; use the full batch size so
-    // verifying thousands of selected leads needs fewer requests.
-    for (let i = 0; i < pendingIds.length; i += 50) {
-      chunks.push(pendingIds.slice(i, i + 50));
+      toast.success('Todos os números selecionados já foram verificados pelo Veriphone.');
+      return true;
     }
 
     setIsVerifyingPhones(true);
     setVerificationProgress({ processed: 0, total: pendingIds.length });
 
-    let mobile = 0;
-    let landline = 0;
-    let voip = 0;
-    let invalid = 0;
-    let errors = 0;
-    let localOnly = 0;
-    let veriphone = 0;
-    let ambiguous = 0;
+    let completedCount = 0;
+    let batchNumber = 0;
+    let remainingIds = [...pendingIds];
 
     try {
-      for (let i = 0; i < chunks.length; i++) {
-        const { data, error: invokeError } = await supabase.functions.invoke('verify-phone-numbers', {
-          body: { leadIds: chunks[i] },
+      // The queue sends at most 1,000 selected leads at a time. When one bulk
+      // job finishes, the next group starts automatically until nothing remains.
+      while (remainingIds.length > 0) {
+        const requestIds = remainingIds.slice(0, 1000);
+
+        const { data: startData, error: startError } = await supabase.functions.invoke(
+          'verify-phone-bulk-start',
+          { body: { leadIds: requestIds } },
+        );
+
+        if (startError) throw startError;
+
+        if (!startData?.success) {
+          const remaining = Number(startData?.remaining || remainingIds.length);
+          const message = startData?.code === 'NO_VERIPHONE_CREDITS'
+            ? `Veriphone sem créditos disponíveis. ${completedCount} número(s) já foram concluídos e ${remaining} ainda aguardam verificação.`
+            : (startData?.error || 'Não foi possível iniciar o próximo lote de verificação.');
+          throw new Error(message);
+        }
+
+        if (startData?.nothingToVerify) {
+          const skipped = new Set(requestIds);
+          remainingIds = remainingIds.filter((id) => !skipped.has(id));
+          continue;
+        }
+
+        const acceptedIds = Array.isArray(startData?.acceptedLeadIds)
+          ? startData.acceptedLeadIds.map((id: unknown) => String(id))
+          : requestIds.slice(0, Number(startData?.accepted || requestIds.length));
+
+        if (!startData?.jobId || acceptedIds.length === 0) {
+          throw new Error('O Veriphone não aceitou nenhum número deste lote.');
+        }
+
+        batchNumber += 1;
+        toast.info(
+          `Lote ${batchNumber}: ${acceptedIds.length} número(s) enviados para verificação completa.`
+        );
+
+        let finished = false;
+        let pollAttempts = 0;
+
+        while (!finished) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          pollAttempts += 1;
+
+          const { data: statusData, error: statusError } = await supabase.functions.invoke(
+            'verify-phone-bulk-status',
+            { body: { jobId: startData.jobId } },
+          );
+
+          if (statusError) throw statusError;
+
+          if (!statusData?.success && statusData?.status === 'error') {
+            throw new Error(statusData?.error || 'Falha ao processar lote no Veriphone.');
+          }
+
+          const batchProcessed = Math.min(
+            Number(statusData?.processed || 0),
+            acceptedIds.length,
+          );
+
+          setVerificationProgress({
+            processed: Math.min(completedCount + batchProcessed, pendingIds.length),
+            total: pendingIds.length,
+          });
+
+          if (statusData?.completed || statusData?.status === 'completed') {
+            finished = true;
+            break;
+          }
+
+          // 30 minutes is intentionally generous. If the provider stalls,
+          // stop this browser loop rather than showing "Verificando" forever.
+          if (pollAttempts >= 900) {
+            throw new Error(
+              'O Veriphone demorou mais de 30 minutos neste lote. Os números já concluídos foram mantidos; tente continuar depois.'
+            );
+          }
+        }
+
+        completedCount += acceptedIds.length;
+        const completedSet = new Set(acceptedIds);
+        remainingIds = remainingIds.filter((id) => !completedSet.has(id));
+
+        setVerificationProgress({
+          processed: completedCount,
+          total: pendingIds.length,
         });
 
-        if (invokeError) throw invokeError;
-        if (!data?.success) throw new Error(data?.error || 'Falha ao verificar telefones');
+        await fetchLeads();
 
-        mobile += Number(data?.summary?.mobile || 0);
-        landline += Number(data?.summary?.landline || 0);
-        voip += Number(data?.summary?.voip || 0);
-        invalid += Number(data?.summary?.invalid || 0);
-        errors += Number(data?.summary?.errors || 0);
-        localOnly += Number(data?.summary?.localOnly || 0);
-        veriphone += Number(data?.summary?.veriphone || 0);
-        ambiguous += Number(data?.summary?.ambiguous || 0);
-
-        const processed = Math.min((i + 1) * 50, pendingIds.length);
-        setVerificationProgress({ processed, total: pendingIds.length });
-
-        if (chunks.length > 1 && (i === 0 || (i + 1) % 5 === 0 || i === chunks.length - 1)) {
-          toast.info(`Verificação: ${processed}/${pendingIds.length} números processados`);
+        if (remainingIds.length > 0) {
+          toast.success(
+            `Lote ${batchNumber} concluído: ${completedCount}/${pendingIds.length}. Iniciando o próximo automaticamente.`
+          );
         }
       }
 
       await fetchLeads();
-
-      const providerText = veriphone > 0
-        ? `${veriphone} via Veriphone grátis`
-        : `${localOnly} via libphonenumber local`;
-
       toast.success(
-        `Verificação grátis concluída: ${mobile} móveis, ${landline} fixos, ${voip} VoIP, ${invalid} inválidos${ambiguous ? `, ${ambiguous} tipos incertos` : ''}${errors ? `, ${errors} erros` : ''}. ${providerText}.`
+        `Verificação completa: ${completedCount} número(s) selecionados passaram pelo Veriphone.`
       );
       return true;
     } catch (err: any) {
-      console.error('Error verifying phone numbers:', err);
-      toast.error(err?.message || 'Erro ao verificar telefones');
+      console.error('Bulk phone verification error:', err);
+      await fetchLeads();
+      toast.error(err?.message || 'Erro ao verificar telefones em lote');
       return false;
     } finally {
       setIsVerifyingPhones(false);
