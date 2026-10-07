@@ -373,7 +373,7 @@ export default function CsvVerification() {
         </Card>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {[
+          {([
             ["Importados", total, FileSpreadsheet],
             ["Móveis", mobile, Smartphone],
             ["Fixos", fixed, Wifi],
