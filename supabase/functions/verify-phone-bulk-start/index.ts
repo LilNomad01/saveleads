@@ -280,21 +280,52 @@ Deno.serve(async (req: Request) => {
   let lastError = "Nenhuma chave conseguiu iniciar o lote.";
 
   for (const candidate of candidates) {
-    const take = Math.min(1000, eligible.length, candidate.available);
+    let take = Math.min(1000, eligible.length, candidate.available);
     if (take <= 0) continue;
 
-    const batch = eligible.slice(0, take);
-    const csvLines = ["lead_id,phone"];
-    for (const lead of batch as any[]) {
-      const phone = normalizePhone(lead.whatsapp_numero || lead.telefone_original);
-      csvLines.push(`${csvEscape(String(lead.id))},${csvEscape(phone)}`);
-    }
-    const csv = csvLines.join("\n");
+    let started: Awaited<ReturnType<typeof uploadAndStart>> | null = null;
+    let batch: any[] = [];
 
-    const started = await uploadAndStart(candidate.key, csv);
-    if (!started.ok || !started.fileId) {
-      lastError = started.error || "Falha ao iniciar lote Veriphone";
-      const hours = started.code === 401 ? 24 : started.code === 402 ? 12 : 1;
+    for (let retry = 0; retry < 2; retry++) {
+      batch = eligible.slice(0, take);
+      const csvLines = ["lead_id,phone"];
+      for (const lead of batch as any[]) {
+        const phone = normalizePhone(lead.whatsapp_numero || lead.telefone_original);
+        csvLines.push(`${csvEscape(String(lead.id))},${csvEscape(phone)}`);
+      }
+      const csv = csvLines.join("\n");
+
+      started = await uploadAndStart(candidate.key, csv);
+
+      if (started.ok && started.fileId) break;
+
+      if (
+        started.code === 402 &&
+        Number.isFinite(started.creditsAvailable) &&
+        Number(started.creditsAvailable) > 0 &&
+        Number(started.creditsAvailable) < take
+      ) {
+        take = Math.min(Number(started.creditsAvailable), eligible.length, 1000);
+        continue;
+      }
+
+      break;
+    }
+
+    if (!started?.ok || !started.fileId) {
+      const available = Number.isFinite(started?.creditsAvailable)
+        ? Number(started?.creditsAvailable)
+        : null;
+      const required = Number.isFinite(started?.creditsRequired)
+        ? Number(started?.creditsRequired)
+        : null;
+
+      lastError = started?.error || "Falha ao iniciar lote Veriphone";
+      if (started?.code === 402) {
+        lastError = `Insufficient credits${available !== null ? ` (disponíveis: ${available}` : ''}${required !== null ? `, necessários: ${required}` : ''}${available !== null || required !== null ? ')' : ''}`;
+      }
+
+      const hours = started?.code === 401 ? 24 : started?.code === 402 ? 12 : 1;
       await markKeyUnavailable(admin, candidate.id, lastError, hours);
       continue;
     }
