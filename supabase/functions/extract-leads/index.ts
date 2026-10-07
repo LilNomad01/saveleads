@@ -317,6 +317,67 @@ async function runApifyActorRotating(
   throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Falha nas chaves Apify'));
 }
 
+function encodeApifyRunWebhooks(requestUrl: string): string {
+  const webhooks = [{
+    eventTypes: [
+      'ACTOR.RUN.SUCCEEDED',
+      'ACTOR.RUN.FAILED',
+      'ACTOR.RUN.ABORTED',
+      'ACTOR.RUN.TIMED_OUT',
+    ],
+    requestUrl,
+    payloadTemplate: '{"resource":{{resource}}}',
+  }];
+
+  return btoa(JSON.stringify(webhooks));
+}
+
+async function startApifyActorAsync(
+  actorId: string,
+  input: Record<string, unknown>,
+  apifyKey: string,
+  callbackUrl: string,
+  label: string,
+): Promise<{ runId: string; defaultDatasetId: string | null }> {
+  const webhooks = encodeApifyRunWebhooks(callbackUrl);
+  const url = `https://api.apify.com/v2/acts/${actorId}/runs?webhooks=${encodeURIComponent(webhooks)}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apifyKey}`,
+    },
+    body: JSON.stringify(input),
+  });
+
+  const body = await response.text();
+  const parsed = tryParseJSON(body);
+
+  if (!response.ok) {
+    const msg = parsed?.error?.message || body.substring(0, 300);
+    throw new Error(`Falha ao iniciar ${label}: HTTP ${response.status} - ${msg}`);
+  }
+
+  const runId = parsed?.data?.id;
+  if (!runId) {
+    throw new Error(`Resposta inválida do Apify ao iniciar ${label}: sem ID de execução`);
+  }
+
+  return {
+    runId,
+    defaultDatasetId: parsed?.data?.defaultDatasetId || null,
+  };
+}
+
+async function markPoolKeyStarted(supabase: any, key: RotatingApiKey) {
+  if (!key.id) return;
+  await supabase
+    .from('api_keys')
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('id', key.id);
+}
+
 function tryParseJSON(text: string): any {
   try { return JSON.parse(text); } catch { return null; }
 }
@@ -841,61 +902,105 @@ serve(async (req) => {
             ? `🔗 Conectando ao Google Maps Scraper (Apify)... buscando até ${crawlLimit} empresas para encontrar ${maxResults} sem site.`
             : '🔗 Conectando ao Google Maps Scraper (Apify)...'
         );
-        const results = await runApifyActorRotating(
-          'compass~crawler-google-places',
-          {
-            searchStringsArray: [keyword],
-            locationQuery: searchContext.locationQuery,
-            maxCrawledPlacesPerSearch: crawlLimit,
-            language: searchContext.language,
-            deeperCityScrape: true,
-            skipClosedPlaces: true,
-          },
-          apifyKeys, supabase, sessionId, 'Google Maps Scraper', 120
-        );
 
-        // IMPORTANTE: place.url é a URL da ficha no Google Maps, não o site da empresa.
-        // Para identificar empresas realmente sem site, usamos exclusivamente place.website.
-        const filteredResults = websiteFilter === 'without'
-          ? results.filter((place: any) => !String(place.website || '').trim())
-          : results;
+        // Google Maps runs can exceed Supabase's 150s Edge Function limit.
+        // Start the Apify run asynchronously and let the webhook callback persist results.
+        const actorId = 'compass~crawler-google-places';
+        const actorInput = {
+          searchStringsArray: [keyword],
+          locationQuery: searchContext.locationQuery,
+          maxCrawledPlacesPerSearch: crawlLimit,
+          language: searchContext.language,
+          deeperCityScrape: true,
+          skipClosedPlaces: true,
+        };
 
-        const selectedResults = filteredResults.slice(0, maxResults || 100);
+        const callbackUrl = `${supabaseUrl}/functions/v1/apify-extraction-callback?sessionId=${encodeURIComponent(sessionId)}`;
+        const poolKeys = apifyKeys.filter((key) => Boolean(key.id));
 
-        if (websiteFilter === 'without') {
+        if (poolKeys.length === 0) {
+          throw new Error('Nenhuma chave Apify do pool disponível para extração assíncrona.');
+        }
+
+        const triedIds: string[] = [];
+        let lastStartError: unknown = null;
+
+        for (let index = 0; index < poolKeys.length; index++) {
+          const key = poolKeys[index];
+          if (!key.id) continue;
+
+          triedIds.push(key.id);
           await logToSession(
             supabase,
             sessionId,
             'info',
-            `🚫 Filtro sem site: ${results.length} empresas analisadas, ${filteredResults.length} sem website, ${selectedResults.length} selecionadas.`
+            `🔑 Usando chave Apify: ${key.label} (${index + 1}/${poolKeys.length}).`
           );
+
+          try {
+            const started = await startApifyActorAsync(
+              actorId,
+              actorInput,
+              key.key,
+              callbackUrl,
+              'Google Maps Scraper',
+            );
+
+            await markPoolKeyStarted(supabase, key);
+
+            const { error: stateError } = await supabase
+              .from('extraction_sessions')
+              .update({
+                apify_run_id: started.runId,
+                apify_key_id: key.id,
+                apify_actor_id: actorId,
+                apify_input: actorInput,
+                apify_tried_key_ids: triedIds,
+                status: 'running',
+              })
+              .eq('id', sessionId)
+              .eq('user_id', userId);
+
+            if (stateError) {
+              throw new Error(`Falha ao registrar execução Apify: ${stateError.message}`);
+            }
+
+            await logToSession(
+              supabase,
+              sessionId,
+              'info',
+              `⏳ Google Maps Scraper iniciado (ID: ${started.runId}). Processando em segundo plano...`
+            );
+
+            return successResponse({
+              started: true,
+              leadsCount: 0,
+              source,
+              sessionId,
+              runId: started.runId,
+            });
+          } catch (error) {
+            lastStartError = error;
+            const message = error instanceof Error ? error.message : String(error);
+
+            if (shouldRotateApiKey(error)) {
+              await markPoolKeyFailed(supabase, key, message);
+              await logToSession(
+                supabase,
+                sessionId,
+                'warning',
+                `⚠️ ${key.label} não conseguiu iniciar a execução (${message.slice(0, 140)}). Tentando a próxima chave.`
+              );
+              continue;
+            }
+
+            throw error;
+          }
         }
 
-        const leads = selectedResults.map((place: any) => {
-          const phoneRaw = place.phone || place.phoneUnformatted || '';
-          const whatsappNumero = sanitizePhoneNumber(phoneRaw, ddd, searchContext.country);
-          return {
-            nome_empresa: place.title || place.name || '',
-            telefone_original: phoneRaw,
-            whatsapp_numero: whatsappNumero,
-            site: String(place.website || '').trim(),
-            endereco: place.address || place.street || '',
-            cidade: location || searchContext.locationQuery || '',
-            extraction_session_id: sessionId,
-            categoria: place.categoryName || keyword,
-            avaliacao: place.totalScore || place.rating || null,
-            total_avaliacoes: place.reviewsCount || place.reviews || 0,
-            status: whatsappNumero ? 'validado' : 'extraido',
-            fonte: 'apify',
-            user_id: userId || null,
-          };
-        });
-
-        for (let i = 0; i < leads.length; i += 500) {
-          const { error: insertError } = await supabase.from('leads').insert(leads.slice(i, i + 500));
-          if (insertError) throw new Error(`Erro ao salvar leads Google Maps: ${insertError.message}`);
-        }
-        leadsCount = leads.length;
+        throw lastStartError instanceof Error
+          ? lastStartError
+          : new Error('Nenhuma chave Apify conseguiu iniciar a extração.');
       }
 
       await logToSession(supabase, sessionId, 'success', `🎉 Extração concluída! ${leadsCount} resultados salvos.`);
