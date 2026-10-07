@@ -150,7 +150,7 @@ async function markPoolKeyFailed(supabase: any, key: RotatingApiKey, message: st
 
 function shouldRotateApiKey(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /(HTTP\s*(401|402|403|429)|unauthori[sz]ed|forbidden|rate\s*limit|quota|credit|crédit|insufficient|token.*invalid|invalid.*token)/i.test(message);
+  return /(HTTP\s*(401|402|403|429)|unauthori[sz]ed|forbidden|rate\s*limit|quota|credit|crédit|insufficient|token.*invalid|invalid.*token|APIFY_RUN_(ABORTED|ABORTING|FAILED|TIMED-OUT|TIMING-OUT)|\b(ABORTED|ABORTING|TIMED-OUT|TIMING-OUT)\b)/i.test(message);
 }
 
 async function runApifyActor(
@@ -202,14 +202,21 @@ async function runApifyActor(
   // Poll for completion
   let attempts = 0;
   let runStatus = 'RUNNING';
+  let runStatusMessage = '';
   while ((runStatus === 'RUNNING' || runStatus === 'READY') && attempts < maxPollAttempts) {
     await new Promise(resolve => setTimeout(resolve, 5000));
     const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}`, {
       headers: { 'Authorization': `Bearer ${apifyKey}` },
     });
     const statusBody = await statusRes.text();
+
+    if (!statusRes.ok) {
+      throw new Error(`Falha ao consultar execução do ${label}: HTTP ${statusRes.status} - ${statusBody.substring(0, 200)}`);
+    }
+
     const statusData = tryParseJSON(statusBody);
     runStatus = statusData?.data?.status || 'UNKNOWN';
+    runStatusMessage = String(statusData?.data?.statusMessage || '').trim();
     attempts++;
     if (attempts % 12 === 0) {
       await supabase.from('extraction_logs').insert({
@@ -220,7 +227,8 @@ async function runApifyActor(
   }
 
   if (runStatus !== 'SUCCEEDED') {
-    throw new Error(`${label} finalizou com status: ${runStatus}. Verifique os logs no Apify.`);
+    const detail = runStatusMessage ? ` Motivo Apify: ${runStatusMessage}` : '';
+    throw new Error(`APIFY_RUN_${runStatus}: ${label} finalizou com status ${runStatus}.${detail}`);
   }
 
   const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items`, {
@@ -263,6 +271,13 @@ async function runApifyActorRotating(
     }
 
     try {
+      await logToSession(
+        supabase,
+        sessionId,
+        'info',
+        `🔑 Usando chave Apify: ${key.label} (${index + 1}/${keys.length}).`
+      );
+
       const results = await runApifyActor(
         actorId,
         input,
@@ -278,17 +293,23 @@ async function runApifyActorRotating(
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : String(error);
+      const canRotate = shouldRotateApiKey(error);
 
-      if (!shouldRotateApiKey(error) || index === keys.length - 1) {
+      // Always quarantine a pool key that produced a rotatable provider/run failure,
+      // even when it is the last key. Otherwise the next extraction can select it again.
+      if (canRotate) {
+        await markPoolKeyFailed(supabase, key, message);
+      }
+
+      if (!canRotate || index === keys.length - 1) {
         throw error;
       }
 
-      await markPoolKeyFailed(supabase, key, message);
       await logToSession(
         supabase,
         sessionId,
         'warning',
-        `⚠️ Chave Apify indisponível (${message.slice(0, 140)}). Alternando sem interromper a extração.`
+        `⚠️ ${key.label} falhou (${message.slice(0, 140)}). Alternando automaticamente para a próxima chave.`
       );
     }
   }
