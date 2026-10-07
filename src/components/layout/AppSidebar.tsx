@@ -11,6 +11,7 @@ import {
   X,
   Workflow,
   List,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,12 @@ const navItems = [
     description: "Base de dados",
     icon: List,
     path: "/leads",
+  },
+  {
+    title: "Verificação",
+    description: "CSV + Veriphone",
+    icon: ShieldCheck,
+    path: "/verificacao",
   },
   {
     title: "Automação",
