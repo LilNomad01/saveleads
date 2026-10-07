@@ -152,10 +152,16 @@ async function loadRotatingKeys(
   } else {
     const now = Date.now();
     for (const row of data || []) {
-      if (row.disabled_until && new Date(row.disabled_until).getTime() > now) continue;
       const key = normalizeApiKey(row.key_value);
       if (!key || seen.has(key)) continue;
+
+      // Mark every pool key as seen BEFORE checking cooldown. Otherwise a pool
+      // key paused for "Insufficient credits" can be re-added through the
+      // legacy profile/env fallback and hammered again on every lead.
       seen.add(key);
+
+      if (row.disabled_until && new Date(row.disabled_until).getTime() > now) continue;
+
       keys.push({
         id: row.id,
         key,
@@ -434,7 +440,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: leads, error: leadsError } = await admin
     .from("leads")
-    .select("id, whatsapp_numero, telefone_original")
+    .select("id, whatsapp_numero, telefone_original, phone_lookup_status")
     .in("id", leadIds)
     .eq("user_id", user.id);
 
@@ -445,9 +451,17 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  const selectedLeads = leads || [];
+  const source = selectedLeads.filter((lead: any) => {
+    const status = String(lead.phone_lookup_status || "unverified");
+    return status === "unverified" || status === "error";
+  });
+
   const summary = {
     requested: leadIds.length,
-    found: leads?.length || 0,
+    found: selectedLeads.length,
+    eligible: source.length,
+    skippedAlreadyProcessed: Math.max(0, selectedLeads.length - source.length),
     mobile: 0,
     landline: 0,
     voip: 0,
@@ -461,7 +475,21 @@ Deno.serve(async (req: Request) => {
   };
 
   const results: Array<Record<string, unknown>> = [];
-  const source = leads || [];
+
+  // Protection against stale UI/old selections: local and verified leads are
+  // never reprocessed by the normal "Verificar" action.
+  if (source.length === 0) {
+    return json(200, {
+      success: true,
+      mode: "nothing_to_verify",
+      summary,
+      results,
+      nothingToVerify: true,
+      notice: summary.skippedAlreadyProcessed > 0
+        ? `${summary.skippedAlreadyProcessed} lead(s) já foram processados. Resultados locais/incertos não são reprocessados automaticamente.`
+        : "Nenhum lead pendente de verificação.",
+    });
+  }
 
   // Small waves keep within free-provider rate limits while preserving decent speed.
   for (let offset = 0; offset < source.length; offset += 5) {
