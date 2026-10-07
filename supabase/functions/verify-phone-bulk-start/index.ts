@@ -181,17 +181,30 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, serviceRole);
 
-  const { data: rows, error: leadsError } = await admin
-    .from("leads")
-    .select("id, whatsapp_numero, telefone_original, phone_lookup_status, phone_lookup_provider")
-    .in("id", requestedIds)
-    .eq("user_id", user.id);
+  // PostgREST encodes .in("id", [...]) in the GET URL. Sending 1,000 UUIDs at
+  // once makes the URL too large and the REST endpoint returns HTTP 400.
+  // Fetch selected leads in smaller chunks while keeping the external
+  // verification batch size at up to 1,000.
+  const rows: any[] = [];
+  const DB_CHUNK_SIZE = 100;
 
-  if (leadsError) {
-    return json(500, { success: false, error: `Erro ao carregar leads: ${leadsError.message}` });
+  for (let i = 0; i < requestedIds.length; i += DB_CHUNK_SIZE) {
+    const idChunk = requestedIds.slice(i, i + DB_CHUNK_SIZE);
+
+    const { data: chunkRows, error: leadsError } = await admin
+      .from("leads")
+      .select("id, whatsapp_numero, telefone_original, phone_lookup_status, phone_lookup_provider")
+      .in("id", idChunk)
+      .eq("user_id", user.id);
+
+    if (leadsError) {
+      return json(500, { success: false, error: `Erro ao carregar leads: ${leadsError.message}` });
+    }
+
+    rows.push(...(chunkRows || []));
   }
 
-  const byId = new Map((rows || []).map((lead: any) => [String(lead.id), lead]));
+  const byId = new Map(rows.map((lead: any) => [String(lead.id), lead]));
   const eligible = requestedIds
     .map((id) => byId.get(id))
     .filter(Boolean)
