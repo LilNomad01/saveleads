@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { toast } from "sonner";
 
 export type DataSource = 'google_maps' | 'telegram' | 'google_reviews' | 'linkedin';
 export type SearchType = 'empresas' | 'grupos' | 'reviews_negativas' | 'usuarios' | 'perfis' | 'empresas_linkedin';
@@ -84,8 +85,28 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (query) {
-      onSearch({ source, searchType, query, location, maxResults, apiProvider, websiteFilter });
+
+    let finalQuery = query.trim();
+    let finalLocation = location.trim();
+
+    // Protect against accidentally swapping fields such as
+    // Query="Raleigh, NC" and Location="Electrician".
+    if (source === 'google_maps' || source === 'google_reviews') {
+      const queryLooksLikeUsLocation = /,\s*[A-Za-z]{2}(?:\s*,?\s*(?:USA|US))?\s*$/i.test(finalQuery);
+      const locationLooksLikeUsLocation = /,\s*[A-Za-z]{2}(?:\s*,?\s*(?:USA|US))?\s*$/i.test(finalLocation);
+
+      if (queryLooksLikeUsLocation && finalLocation && !locationLooksLikeUsLocation) {
+        const previousQuery = finalQuery;
+        finalQuery = finalLocation;
+        finalLocation = previousQuery;
+        setQuery(finalQuery);
+        setLocation(finalLocation);
+        toast.info('Query e localização pareciam invertidas. Corrigi automaticamente antes da extração.');
+      }
+    }
+
+    if (finalQuery) {
+      onSearch({ source, searchType, query: finalQuery, location: finalLocation, maxResults, apiProvider, websiteFilter });
     }
   };
 
