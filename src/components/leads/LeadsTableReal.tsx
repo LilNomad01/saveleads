@@ -45,6 +45,7 @@ interface LeadsTableRealProps {
   onExtractPhones?: (leadIds: string[]) => string[];
   onVerifyPhones?: (leadIds: string[]) => Promise<boolean>;
   isVerifyingPhones?: boolean;
+  verificationProgress?: { processed: number; total: number } | null;
 }
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -136,7 +137,7 @@ const getLeadPhoneTypeLabel = (lead: Lead) => {
   return 'Não verificado';
 };
 
-export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtractPhones, onVerifyPhones, isVerifyingPhones = false }: LeadsTableRealProps) {
+export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtractPhones, onVerifyPhones, isVerifyingPhones = false, verificationProgress = null }: LeadsTableRealProps) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
@@ -581,7 +582,9 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
                   className="flex-1 text-xs"
                 >
                   {isVerifyingPhones ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
-                  Verificar grátis
+                  {isVerifyingPhones && verificationProgress
+                    ? `Verificando ${verificationProgress.processed}/${verificationProgress.total}`
+                    : 'Verificar grátis'}
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -654,7 +657,11 @@ export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtract
                   disabled={selectedLeads.size === 0 || isVerifyingPhones}
                 >
                   {isVerifyingPhones ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                  {isVerifyingPhones ? 'Verificando...' : 'Verificar grátis'}
+                  {isVerifyingPhones && verificationProgress
+                    ? `Verificando ${verificationProgress.processed}/${verificationProgress.total}`
+                    : isVerifyingPhones
+                      ? 'Verificando...'
+                      : 'Verificar grátis'}
                 </Button>
                 <Button 
                   variant="outline" 
