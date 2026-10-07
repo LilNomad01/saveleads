@@ -39,6 +39,7 @@ import { LeadFilters, LeadFiltersState, defaultFilters } from './LeadFilters';
 
 interface LeadsTableRealProps {
   leads: Lead[];
+  allLeads?: Lead[];
   isLoading: boolean;
   onDelete?: (leadIds: string[]) => Promise<boolean>;
   onExtractPhones?: (leadIds: string[]) => string[];
@@ -123,7 +124,7 @@ const getLeadPhoneTypeLabel = (lead: Lead) => {
   return 'Não verificado';
 };
 
-export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, onVerifyPhones, isVerifyingPhones = false }: LeadsTableRealProps) {
+export function LeadsTableReal({ leads, allLeads, isLoading, onDelete, onExtractPhones, onVerifyPhones, isVerifyingPhones = false }: LeadsTableRealProps) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
@@ -132,6 +133,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
   const [filters, setFilters] = useState<LeadFiltersState>(defaultFilters);
   const [currentPage, setCurrentPage] = useState(1);
   const ROWS_PER_PAGE = 250;
+  const globalLeads = allLeads ?? leads;
 
   // Get unique status options
   const statusOptions = useMemo(() => {
@@ -216,6 +218,21 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
     };
   }, [filteredLeads]);
 
+  // Global stats are computed from every Google Maps lead loaded in the account,
+  // regardless of the selected extraction/batch or the current table page.
+  const globalStats = useMemo(() => {
+    const mobile = globalLeads.filter(isLeadVerifiedMobile).length;
+    const unverified = globalLeads.filter(
+      l => !!l.whatsapp_numero && l.phone_lookup_status !== 'verified'
+    ).length;
+
+    return {
+      total: globalLeads.length,
+      mobile,
+      unverified,
+    };
+  }, [globalLeads]);
+
   const toggleLead = (id: string) => {
     const newSelected = new Set(selectedLeads);
     if (newSelected.has(id)) {
@@ -252,29 +269,29 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
   };
 
   const selectAllUnverified = () => {
-    const unverified = filteredLeads.filter(
+    const unverified = globalLeads.filter(
       (lead) => !!lead.whatsapp_numero && lead.phone_lookup_status !== 'verified'
     );
     setSelectedLeads(new Set(unverified.map((lead) => lead.id)));
 
     if (unverified.length === 0) {
-      toast.info('Todos os leads com telefone desta visualização já foram verificados.');
+      toast.info('Todos os leads com telefone já foram verificados.');
       return;
     }
 
-    toast.success(`${unverified.length} leads não verificados selecionados — todas as páginas.`);
+    toast.success(`${unverified.length} leads não verificados selecionados — todos os lotes.`);
   };
 
   const selectAllMobile = () => {
-    const mobileLeads = filteredLeads.filter(isLeadVerifiedMobile);
+    const mobileLeads = globalLeads.filter(isLeadVerifiedMobile);
     setSelectedLeads(new Set(mobileLeads.map(l => l.id)));
 
     if (mobileLeads.length === 0) {
-      toast.info('Nenhum móvel verificado. Selecione os leads e clique em Verificar grátis primeiro.');
+      toast.info('Nenhum móvel verificado. Selecione os não verificados e clique em Verificar grátis primeiro.');
       return;
     }
 
-    toast.success(`${mobileLeads.length} leads móveis verificados selecionados!`);
+    toast.success(`${mobileLeads.length} móveis selecionados — todos os lotes e páginas.`);
   };
 
   const selectWithoutWebsite = () => {
@@ -295,7 +312,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
   };
 
   const exportPhonesToXLSX = () => {
-    const leadsToExport = filteredLeads.filter(l => selectedLeads.has(l.id) && l.whatsapp_numero);
+    const leadsToExport = globalLeads.filter(l => selectedLeads.has(l.id) && l.whatsapp_numero);
     if (leadsToExport.length === 0) {
       toast.error('Nenhum lead com telefone válido selecionado');
       return;
@@ -326,7 +343,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
   };
 
   const exportMobileOnly = () => {
-    const mobileLeads = filteredLeads.filter(isLeadVerifiedMobile);
+    const mobileLeads = globalLeads.filter(isLeadVerifiedMobile);
     if (mobileLeads.length === 0) {
       toast.error('Nenhum telefone móvel verificado. Faça o Lookup antes de exportar.');
       return;
@@ -348,7 +365,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Moveis verificados');
     
     XLSX.writeFile(workbook, `moveis_verificados_${new Date().toISOString().split('T')[0]}.xlsx`);
-    toast.success(`${mobileLeads.length} números móveis verificados exportados!`);
+    toast.success(`${mobileLeads.length} números móveis exportados — todos os lotes!`);
   };
 
   const handleExtractPhones = () => {
@@ -437,6 +454,22 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
           <ShieldCheck className="h-3 w-3 text-muted-foreground" />
           {stats.unverified} não verificados
         </Badge>
+        {globalLeads.length !== leads.length && (
+          <>
+            <span className="mx-1 h-4 w-px bg-border shrink-0" />
+            <Badge variant="secondary" className="gap-1 shrink-0">
+              Geral: {globalStats.total} leads
+            </Badge>
+            <Badge variant="secondary" className="gap-1 shrink-0">
+              <Smartphone className="h-3 w-3" />
+              {globalStats.mobile} móveis em todos os lotes
+            </Badge>
+            <Badge variant="secondary" className="gap-1 shrink-0">
+              <ShieldCheck className="h-3 w-3" />
+              {globalStats.unverified} a verificar no total
+            </Badge>
+          </>
+        )}
       </div>
 
       {/* Frontend pagination: all leads stay loaded; only 250 rows render at a time. */}
@@ -497,11 +530,11 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                   variant="outline"
                   size="sm"
                   onClick={selectAllUnverified}
-                  disabled={stats.unverified === 0}
+                  disabled={globalStats.unverified === 0}
                   className="flex-1 text-xs"
                 >
                   <ShieldCheck className="h-3 w-3" />
-                  Não verif. ({stats.unverified})
+                  Não verif. geral ({globalStats.unverified})
                 </Button>
                 <Button 
                   variant="outline" 
@@ -510,7 +543,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                   className="flex-1 text-xs"
                 >
                   <Smartphone className="h-3 w-3" />
-                  Móveis
+                  Todos móveis ({globalStats.mobile})
                 </Button>
                 <Button
                   variant="outline"
@@ -574,10 +607,10 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                   variant="outline"
                   size="sm"
                   onClick={selectAllUnverified}
-                  disabled={stats.unverified === 0}
+                  disabled={globalStats.unverified === 0}
                 >
                   <ShieldCheck className="h-4 w-4" />
-                  Não verificados ({stats.unverified})
+                  Não verificados — geral ({globalStats.unverified})
                 </Button>
                 <Button 
                   variant="outline" 
@@ -585,7 +618,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                   onClick={selectAllMobile}
                 >
                   <Smartphone className="h-4 w-4" />
-                  Selecionar Móveis
+                  Selecionar Todos os Móveis ({globalStats.mobile})
                 </Button>
                 <Button
                   variant="outline"
@@ -628,7 +661,7 @@ export function LeadsTableReal({ leads, isLoading, onDelete, onExtractPhones, on
                   onClick={exportMobileOnly}
                 >
                   <FileSpreadsheet className="h-4 w-4" />
-                  Exportar Móveis
+                  Exportar Todos os Móveis ({globalStats.mobile})
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
