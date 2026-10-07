@@ -210,7 +210,7 @@ export default function LeadExtractor() {
                     Ver extrações
                   </Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => setSelectedExtractionId(null)}>
-                    Mostrar todos
+                    Mostrar todos ({leads.length})
                   </Button>
                 </div>
               </div>
