@@ -49,7 +49,11 @@ export function useLeadExtraction() {
       }
 
       if (data?.success) {
-        toast.success(`Extração concluída! ${data.leadsCount} resultados encontrados.`);
+        if (data?.started) {
+          toast.success('Extração iniciada! Ela continuará em segundo plano e os leads aparecerão automaticamente.');
+        } else {
+          toast.success(`Extração concluída! ${data.leadsCount} resultados encontrados.`);
+        }
       } else {
         // Edge function returned 200 but success: false
         const errorMsg = data?.error || 'Erro desconhecido na extração';
