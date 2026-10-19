@@ -518,7 +518,17 @@ function extractDDD(location: string): string {
 
 // =================== MAIN ===================
 
+type ReputationFilters = {
+  minRating: number;
+  maxRating: number;
+  minReviews: number;
+  maxReviews: number | null;
+  negativeReviewMaxRating: 1 | 2;
+  requirePhone: boolean;
+};
+
 interface ExtractRequest {
+  reputationFilters?: ReputationFilters;
   keyword: string;
   location: string;
   sessionId: string;
@@ -565,11 +575,36 @@ serve(async (req) => {
       source = 'google_maps',
       searchType = 'empresas',
       websiteFilter = 'all',
+      reputationFilters,
     } = payload;
     sessionId = sid;
     sessionUserId = userId;
 
     console.log(`[extract-leads] Payload: source=${source}, type=${searchType}, keyword="${keyword}", location="${location}", provider=${apiProvider}, max=${maxResults}, websiteFilter=${websiteFilter}`);
+
+    const filterRatings = source === 'google_maps' || source === 'google_reviews';
+    if (filterRatings && apiProvider === 'mock') {
+      return errorResponse('Dados simulados desativados para Google Maps e Google Reviews.');
+    }
+    const filters: ReputationFilters | null = filterRatings && reputationFilters
+      ? {
+          minRating: Number(reputationFilters.minRating),
+          maxRating: Number(reputationFilters.maxRating),
+          minReviews: Number(reputationFilters.minReviews),
+          maxReviews: reputationFilters.maxReviews == null ? null : Number(reputationFilters.maxReviews),
+          negativeReviewMaxRating: reputationFilters.negativeReviewMaxRating === 1 ? 1 : 2,
+          requirePhone: reputationFilters.requirePhone !== false,
+        }
+      : null;
+
+    if (filters && (
+      !Number.isFinite(filters.minRating) || !Number.isFinite(filters.maxRating) ||
+      filters.minRating < 1 || filters.maxRating > 5 || filters.minRating > filters.maxRating ||
+      !Number.isInteger(filters.minReviews) || filters.minReviews < 0 ||
+      (filters.maxReviews !== null && (!Number.isInteger(filters.maxReviews) || filters.maxReviews < filters.minReviews))
+    )) {
+      return errorResponse('Filtros de reputação inválidos.', 'Confira as estrelas (1 a 5) e o intervalo de avaliações.');
+    }
 
     if (!keyword || !keyword.trim()) {
       await logToSession(supabase, sessionId, 'error', '❌ Query/palavra-chave é obrigatória');
@@ -847,7 +882,7 @@ serve(async (req) => {
           {
             searchStringsArray: [keyword],
             locationQuery: searchContext.locationQuery,
-            maxCrawledPlacesPerSearch: maxResults || 100,
+            maxCrawledPlacesPerSearch: filters ? Math.min((maxResults || 100) * 3, 10000) : maxResults || 100,
             language: searchContext.language,
             deeperCityScrape: true,
             skipClosedPlaces: true,
@@ -860,17 +895,30 @@ serve(async (req) => {
 
         const reviewLeads: any[] = [];
         for (const place of results) {
-          const negativeReviews = (place.reviews || []).filter((r: any) => (r.stars || r.rating || 5) <= 2);
+          const average = Number(place.totalScore ?? place.rating);
+          const count = Number(place.reviewsCount ?? (typeof place.reviews === 'number' ? place.reviews : NaN));
+          if (filters && (
+            !Number.isFinite(average) || average < filters.minRating || average > filters.maxRating ||
+            !Number.isFinite(count) || count < filters.minReviews ||
+            (filters.maxReviews !== null && count > filters.maxReviews) ||
+            (filters.requirePhone && !String(place.phone || place.phoneUnformatted || '').trim())
+          )) continue;
+          const negativeReviews = (Array.isArray(place.reviews) ? place.reviews : [])
+            .filter((review: any) => {
+              const stars = Number(review.stars ?? review.rating);
+              return Number.isFinite(stars) && stars >= 1 && stars <= (filters?.negativeReviewMaxRating ?? 2);
+            });
           if (searchType === 'reviews_negativas' && negativeReviews.length === 0) continue;
-          for (const review of (searchType === 'reviews_negativas' ? negativeReviews : [{ text: '', stars: place.totalScore }])) {
+          for (const review of (searchType === 'reviews_negativas' ? negativeReviews : [{ text: '', stars: average }])) {
+            if (reviewLeads.length >= maxResults) break;
             reviewLeads.push({
               empresa: place.title || place.name,
               telefone: place.phone || '',
               website: place.website || '',
               endereco: place.address || '',
               cidade: location,
-              rating_medio: place.totalScore || null,
-              total_reviews: place.reviewsCount || 0,
+              rating_medio: Number.isFinite(average) ? average : null,
+              total_reviews: Number.isFinite(count) ? count : 0,
               review: review.text || '',
               rating: review.stars || review.rating || null,
               autor: review.name || review.author || '',
@@ -878,6 +926,7 @@ serve(async (req) => {
               user_id: userId || null,
             });
           }
+          if (reviewLeads.length >= maxResults) break;
         }
 
         if (reviewLeads.length > 0) {
@@ -890,8 +939,8 @@ serve(async (req) => {
 
       // ---- GOOGLE MAPS (default) ----
       } else {
-        const crawlLimit = websiteFilter === 'without'
-          ? Math.min(Math.max((maxResults || 100) * 3, maxResults || 100), 10000)
+        const crawlLimit = websiteFilter === 'without' || filters
+          ? Math.min((maxResults || 100) * 3, 10000)
           : (maxResults || 100);
 
         await logToSession(
@@ -954,7 +1003,7 @@ serve(async (req) => {
                 apify_run_id: started.runId,
                 apify_key_id: key.id,
                 apify_actor_id: actorId,
-                apify_input: actorInput,
+                apify_input: { ...actorInput, _leadFilters: filters },
                 apify_tried_key_ids: triedIds,
                 status: 'running',
               })
