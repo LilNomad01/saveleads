@@ -168,9 +168,10 @@ async function rotateRun(supabase: any, session: any, failureMessage: string) {
 
     try {
       const apiKey = normalizeApiKey(candidate.key_value);
+      const { _leadFilters: _notAnActorOption, ...actorInput } = session.apify_input || {};
       const runId = await startActor(
         session.apify_actor_id,
-        session.apify_input || {},
+        actorInput,
         apiKey,
         callbackUrl,
       );
@@ -322,11 +323,39 @@ serve(async (req) => {
   const results = await datasetRes.json();
   const rawResults = Array.isArray(results) ? results : [];
   const websiteFilter = session.website_filter || 'all';
-  const filtered = websiteFilter === 'without'
-    ? rawResults.filter((place: any) => !String(place.website || '').trim())
-    : rawResults;
-  const selected = filtered.slice(0, Number(session.requested_max_results || 100));
+  const filters = session.apify_input?._leadFilters || null;
+  const filtered = rawResults.filter((place: any) => {
+    if (!place || !String(place.title || place.name || '').trim()) return false;
+    if (websiteFilter === 'without' && String(place.website || '').trim()) return false;
+    if (!filters) return true; // Legacy extractions without filters.
+    const rating = Number(place.totalScore ?? place.rating);
+    const reviews = Number(place.reviewsCount ?? (typeof place.reviews === 'number' ? place.reviews : NaN));
+    if (!Number.isFinite(rating) || rating < filters.minRating || rating > filters.maxRating) return false;
+    if (!Number.isFinite(reviews) || reviews < filters.minReviews) return false;
+    if (filters.maxReviews != null && reviews > filters.maxReviews) return false;
+    if (filters.requirePhone && !String(place.phone || place.phoneUnformatted || '').trim()) return false;
+    return true;
+  });
+
+  // Remove duplicate places inside the search before saving or counting the target.
+  const seen = new Set<string>();
+  const unique = filtered.filter((place: any) => {
+    const key = place.placeId || place.place_id || place.url ||
+      [String(place.title || place.name).trim().toLowerCase(), String(place.address || place.street || '').trim().toLowerCase()].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (filters) {
+    unique.sort((a: any, b: any) => Number(a.totalScore ?? a.rating) - Number(b.totalScore ?? b.rating));
+  }
+  const selected = unique.slice(0, Number(session.requested_max_results || 100));
   const country = resolveCountry(session.location || '');
+
+  await logToSession(
+    supabase, session.id, 'info',
+    `🔎 Reputação: ${rawResults.length} consultadas, ${filtered.length} nos critérios, ${selected.length} selecionadas.`
+  );
 
   const leads = selected.map((place: any) => {
     const phoneRaw = place.phone || place.phoneUnformatted || '';
@@ -340,8 +369,9 @@ serve(async (req) => {
       cidade: session.location || '',
       extraction_session_id: session.id,
       categoria: place.categoryName || session.query,
-      avaliacao: place.totalScore || place.rating || null,
-      total_avaliacoes: place.reviewsCount || place.reviews || 0,
+      avaliacao: Number(place.totalScore ?? place.rating) || null,
+      total_avaliacoes: Number(place.reviewsCount ?? (typeof place.reviews === 'number' ? place.reviews : 0)),
+      metadata_json: { place_id: place.placeId || place.place_id || null, google_maps_url: place.url || null },
       status: whatsappNumero ? 'validado' : 'extraido',
       fonte: 'apify',
       user_id: session.user_id,
