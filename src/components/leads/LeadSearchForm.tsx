@@ -3,6 +3,7 @@ import { Search, MapPin, Loader2, Database, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -15,6 +16,14 @@ import { toast } from "sonner";
 
 export type DataSource = 'google_maps' | 'telegram' | 'google_reviews' | 'linkedin';
 export type SearchType = 'empresas' | 'grupos' | 'reviews_negativas' | 'usuarios' | 'perfis' | 'empresas_linkedin';
+export interface ReputationFilters {
+  minRating: number;
+  maxRating: number;
+  minReviews: number;
+  maxReviews: number | null;
+  negativeReviewMaxRating: 1 | 2;
+  requirePhone: boolean;
+}
 
 const sourceConfig: Record<DataSource, { label: string; emoji: string; searchTypes: { value: SearchType; label: string }[] }> = {
   google_maps: {
@@ -59,6 +68,7 @@ interface LeadSearchFormProps {
     maxResults: number;
     apiProvider: 'apify' | 'mock';
     websiteFilter: 'all' | 'without';
+    reputationFilters: ReputationFilters;
   }) => void;
   isLoading: boolean;
 }
@@ -71,6 +81,13 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
   const [maxResults, setMaxResults] = useState(1000);
   const [apiProvider, setApiProvider] = useState<'apify' | 'mock'>('apify');
   const [websiteFilter, setWebsiteFilter] = useState<'all' | 'without'>('all');
+  const [minRating, setMinRating] = useState(3.8);
+  const [maxRating, setMaxRating] = useState(4.4);
+  const [minReviews, setMinReviews] = useState(10);
+  const [maxReviews, setMaxReviews] = useState('');
+  const [negativeReviewMaxRating, setNegativeReviewMaxRating] = useState<1 | 2>(2);
+  const [requirePhone, setRequirePhone] = useState(true);
+  const isReputationSource = source === 'google_maps' || source === 'google_reviews';
 
   const currentConfig = sourceConfig[source];
   const showLocation = source !== 'telegram' && source !== 'linkedin';
@@ -105,8 +122,28 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
       }
     }
 
+    if (isReputationSource) {
+      const reviewMax = maxReviews.trim() === '' ? null : Number(maxReviews);
+      if (!Number.isFinite(minRating) || !Number.isFinite(maxRating) || minRating < 1 || maxRating > 5 || minRating > maxRating) {
+        toast.error('Defina um intervalo de estrelas entre 1 e 5.');
+        return;
+      }
+      if (!Number.isInteger(minReviews) || minReviews < 0 || (reviewMax !== null && (!Number.isInteger(reviewMax) || reviewMax < minReviews))) {
+        toast.error('Confira o mínimo e máximo de avaliações.');
+        return;
+      }
+    }
     if (finalQuery) {
-      onSearch({ source, searchType, query: finalQuery, location: finalLocation, maxResults, apiProvider, websiteFilter });
+      onSearch({
+        source, searchType, query: finalQuery, location: finalLocation, maxResults,
+        apiProvider: isReputationSource ? 'apify' : apiProvider,
+        websiteFilter,
+        reputationFilters: {
+          minRating, maxRating, minReviews,
+          maxReviews: maxReviews.trim() === '' ? null : Number(maxReviews),
+          negativeReviewMaxRating, requirePhone,
+        }
+      });
     }
   };
 
@@ -117,13 +154,13 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
           <Database className="h-5 w-5 text-primary" />
           Extrair Dados
         </h3>
-        <Select value={apiProvider} onValueChange={(v) => setApiProvider(v as 'apify' | 'mock')}>
+        <Select value={isReputationSource ? 'apify' : apiProvider} onValueChange={(v) => setApiProvider(v as 'apify' | 'mock')}>
           <SelectTrigger className="w-full sm:w-[200px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="apify">🚀 API Real (Apify)</SelectItem>
-            <SelectItem value="mock">🧪 Demo (Simulado)</SelectItem>
+            {!isReputationSource && <SelectItem value="mock">🧪 Demo (Simulado)</SelectItem>}
           </SelectContent>
         </Select>
       </div>
@@ -268,6 +305,57 @@ export function LeadSearchForm({ onSearch, isLoading }: LeadSearchFormProps) {
           </Button>
         </div>
       </div>
+      {isReputationSource && (
+        <div className="mt-5 rounded-xl border border-border bg-muted/30 p-4">
+          <div className="mb-4">
+            <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
+              <Filter className="h-4 w-4 text-primary" />Filtrar por reputação
+            </h4>
+            <p className="text-xs text-muted-foreground mt-1">
+              O filtro seleciona empresas reais antes de salvar. A busca pode consultar mais empresas do que o limite solicitado.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="space-y-2">
+              <Label htmlFor="minRating">Nota mínima (estrelas)</Label>
+              <Input id="minRating" type="number" min={1} max={5} step="0.1" value={minRating}
+                onChange={(e) => setMinRating(Number(e.target.value))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="maxRating">Nota máxima (estrelas)</Label>
+              <Input id="maxRating" type="number" min={1} max={5} step="0.1" value={maxRating}
+                onChange={(e) => setMaxRating(Number(e.target.value))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="minReviews">Mínimo de avaliações</Label>
+              <Input id="minReviews" type="number" min={0} step={1} value={minReviews}
+                onChange={(e) => setMinReviews(Number(e.target.value))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="maxReviews">Máximo de avaliações (opcional)</Label>
+              <Input id="maxReviews" type="number" min={0} step={1} placeholder="Sem limite" value={maxReviews}
+                onChange={(e) => setMaxReviews(e.target.value)} />
+            </div>
+            <div className="flex items-center gap-2 pt-5">
+              <Checkbox id="requirePhone" checked={requirePhone} onCheckedChange={(value) => setRequirePhone(value === true)} />
+              <Label htmlFor="requirePhone">Somente com telefone</Label>
+            </div>
+          </div>
+          {source === 'google_reviews' && searchType === 'reviews_negativas' && (
+            <div className="mt-4 space-y-2 sm:max-w-[300px]">
+              <Label>Notas das avaliações individuais</Label>
+              <Select value={String(negativeReviewMaxRating)}
+                onValueChange={(value) => setNegativeReviewMaxRating(value === '1' ? 1 : 2)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Somente reviews de 1 estrela</SelectItem>
+                  <SelectItem value="2">Reviews de 1 e 2 estrelas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      )}
     </form>
   );
 }
