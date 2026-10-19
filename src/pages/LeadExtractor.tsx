@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { LeadSearchForm, DataSource, SearchType } from "@/components/leads/LeadSearchForm";
+import { LeadSearchForm, DataSource, SearchType, ReputationFilters } from "@/components/leads/LeadSearchForm";
 import { LeadsTableReal } from "@/components/leads/LeadsTableReal";
 import { TelegramLeadsTable } from "@/components/leads/TelegramLeadsTable";
 import { LinkedinLeadsTable } from "@/components/leads/LinkedinLeadsTable";
@@ -46,6 +46,7 @@ export default function LeadExtractor() {
     maxResults: number;
     apiProvider: 'apify' | 'mock';
     websiteFilter: 'all' | 'without';
+    reputationFilters: ReputationFilters;
   }) => {
     // Switch to the tab of the source being extracted
     setActiveTab(params.source);
@@ -57,7 +58,8 @@ export default function LeadExtractor() {
       params.maxResults,
       params.source,
       params.searchType,
-      params.websiteFilter
+      params.websiteFilter,
+      params.reputationFilters
     );
 
     await Promise.all([refetchLeads(), refetchSessions()]);
