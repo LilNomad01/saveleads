@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useAuth } from './useAuth';
+import type { ReputationFilters } from '@/components/leads/LeadSearchForm';
 
 export function useLeadExtraction() {
   const { user } = useAuth();
@@ -15,7 +16,8 @@ export function useLeadExtraction() {
     maxResults: number = 100,
     source: string = 'google_maps',
     searchType: string = 'empresas',
-    websiteFilter: 'all' | 'without' = 'all'
+    websiteFilter: 'all' | 'without' = 'all',
+    reputationFilters?: ReputationFilters
   ) => {
     const newSessionId = crypto.randomUUID();
     setSessionId(newSessionId);
@@ -32,7 +34,8 @@ export function useLeadExtraction() {
           userId: user?.id,
           source,
           searchType,
-          websiteFilter
+          websiteFilter,
+          reputationFilters
         }
       });
 
